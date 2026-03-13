@@ -1,0 +1,11 @@
+{
+  "name": "@commonwealth/contracts",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "forge build",
+    "test": "forge test -vv",
+    "deploy": "forge script script/Deploy.s.sol --broadcast --verify",
+    "clean": "forge clean"
+  }
+}
