@@ -1,0 +1,113 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum/contract
+    name: ConvictionVoting
+    network: sepolia
+    source:
+      address: "0x0000000000000000000000000000000000000000"
+      abi: ConvictionVoting
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Proposal
+        - Vote
+      abis:
+        - name: ConvictionVoting
+          file: ../contracts/out/ConvictionVoting.sol/ConvictionVoting.json
+      eventHandlers:
+        - event: ProposalCreated(indexed uint256,indexed address,string,uint256)
+          handler: handleProposalCreated
+        - event: ConvictionUpdated(indexed uint256,indexed address,uint256)
+          handler: handleConvictionUpdated
+        - event: ProposalExecuted(indexed uint256,indexed address,uint256)
+          handler: handleProposalExecuted
+        - event: ProposalCancelled(indexed uint256)
+          handler: handleProposalCancelled
+      file: ./src/conviction-voting.ts
+
+  - kind: ethereum/contract
+    name: ImpactAttestation
+    network: sepolia
+    source:
+      address: "0x0000000000000000000000000000000000000000"
+      abi: ImpactAttestation
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Attestation
+        - Contributor
+      abis:
+        - name: ImpactAttestation
+          file: ../contracts/out/ImpactAttestation.sol/ImpactAttestation.json
+      eventHandlers:
+        - event: Submitted(indexed uint256,indexed address,string,uint256)
+          handler: handleAttestationSubmitted
+        - event: Confirmed(indexed uint256,indexed address,uint256)
+          handler: handleConfirmed
+        - event: Rewarded(indexed uint256,indexed address,uint256)
+          handler: handleRewarded
+      file: ./src/impact-attestation.ts
+
+  - kind: ethereum/contract
+    name: SavingsCircle
+    network: sepolia
+    source:
+      address: "0x0000000000000000000000000000000000000000"
+      abi: SavingsCircle
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Circle
+      abis:
+        - name: SavingsCircle
+          file: ../contracts/out/SavingsCircle.sol/SavingsCircle.json
+      eventHandlers:
+        - event: Created(indexed uint256,address,string)
+          handler: handleCircleCreated
+        - event: Joined(indexed uint256,address)
+          handler: handleMemberJoined
+        - event: Started(indexed uint256)
+          handler: handleCircleStarted
+        - event: Contributed(indexed uint256,address,uint256)
+          handler: handleContributed
+        - event: Payout(indexed uint256,address,uint256,uint256)
+          handler: handlePayout
+        - event: CircleCompleted(indexed uint256)
+          handler: handleCircleCompleted
+      file: ./src/savings-circle.ts
+
+  - kind: ethereum/contract
+    name: DePINRegistry
+    network: sepolia
+    source:
+      address: "0x0000000000000000000000000000000000000000"
+      abi: DePINRegistry
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - DataSubmission
+      abis:
+        - name: DePINRegistry
+          file: ../contracts/out/DePINRegistry.sol/DePINRegistry.json
+      eventHandlers:
+        - event: Submitted(indexed uint256,indexed address,uint8)
+          handler: handleDataSubmitted
+        - event: Verified(indexed uint256,uint256,uint256)
+          handler: handleDataVerified
+        - event: Claimed(indexed uint256,address,uint256)
+          handler: handleDataClaimed
+      file: ./src/depin-registry.ts
