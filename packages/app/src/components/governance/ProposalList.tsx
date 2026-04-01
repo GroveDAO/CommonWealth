@@ -1,181 +1,205 @@
 "use client";
 
-import { useState } from "react";
-import { useAccount, useWriteContract } from "wagmi";
+import { useEffect, useMemo, useState } from "react";
+import { COMMONWEALTH_TOKEN_ABI, CONVICTION_VOTING_ABI } from "@commonwealth/sdk";
 import { parseEther } from "viem";
-import { CONVICTION_VOTING_ABI } from "@commonwealth/sdk";
+import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { CONTRACTS } from "@/lib/contracts";
+import { formatDate, formatEth, formatToken, truncateAddress } from "@/lib/format";
+import { useProtocolData, useRefreshProtocolData } from "@/hooks/useProtocolData";
 import { CreateProposalModal } from "./CreateProposalModal";
 
-const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONVICTION_VOTING_ADDRESS ?? "0x0") as `0x${string}`;
-
-interface MockProposal {
-  id: number;
+function ProposalCard({
+  proposalId,
+  title,
+  summary,
+  proposer,
+  requestedAmount,
+  conviction,
+  threshold,
+  myStake,
+  canExecute,
+  tokenAllowance,
+}: {
+  proposalId: bigint;
   title: string;
+  summary: string;
   proposer: string;
-  requestedAmount: number;
-  conviction: number;
-  threshold: number;
-  daysLeft: number;
-  staked: number;
-}
+  requestedAmount: bigint;
+  conviction: bigint;
+  threshold: bigint;
+  myStake: bigint;
+  canExecute: boolean;
+  tokenAllowance: bigint;
+}) {
+  const refreshProtocolData = useRefreshProtocolData();
+  const { isConnected } = useAccount();
+  const { data: hash, isPending, writeContract } = useWriteContract();
+  const { isSuccess } = useWaitForTransactionReceipt({ hash });
+  const [amount, setAmount] = useState("");
 
-const MOCK_PROPOSALS: MockProposal[] = [
-  {
-    id: 1,
-    title: "Fund Filecoin storage infrastructure expansion",
-    proposer: "0xabc123...def456",
-    requestedAmount: 15,
-    conviction: 78,
-    threshold: 100,
-    daysLeft: 5,
-    staked: 12400,
-  },
-  {
-    id: 2,
-    title: "NEAR Protocol bridge integration for chain abstraction",
-    proposer: "0x789abc...123def",
-    requestedAmount: 8,
-    conviction: 52,
-    threshold: 100,
-    daysLeft: 12,
-    staked: 8750,
-  },
-  {
-    id: 3,
-    title: "Starknet ZK voting module deployment",
-    proposer: "0x456789...abcdef",
-    requestedAmount: 22,
-    conviction: 91,
-    threshold: 100,
-    daysLeft: 1,
-    staked: 31200,
-  },
-  {
-    id: 4,
-    title: "Lit Protocol DePIN access gating upgrade",
-    proposer: "0xfed321...654abc",
-    requestedAmount: 5,
-    conviction: 34,
-    threshold: 100,
-    daysLeft: 19,
-    staked: 4100,
-  },
-];
+  useEffect(() => {
+    if (isSuccess) {
+      setAmount("");
+      void refreshProtocolData();
+    }
+  }, [isSuccess, refreshProtocolData]);
 
-function convictionColor(pct: number): string {
-  if (pct >= 90) return "bg-accent-green";
-  if (pct >= 50) return "bg-accent-yellow";
-  return "bg-accent-purple";
-}
+  const parsedAmount = useMemo(() => {
+    if (!amount) return null;
+    try {
+      return parseEther(amount);
+    } catch {
+      return null;
+    }
+  }, [amount]);
 
-function ConvictionBar({ conviction, threshold }: { conviction: number; threshold: number }) {
-  const pct = Math.min(Math.round((conviction / threshold) * 100), 100);
-  return (
-    <div className="w-full h-1.5 bg-bg-surface rounded-full overflow-hidden">
-      <div
-        className={`h-full rounded-full transition-all ${convictionColor(pct)}`}
-        style={{ width: `${pct}%` }}
-      />
-    </div>
-  );
-}
+  const needsApproval = parsedAmount !== null && tokenAllowance < parsedAmount;
+  const progress = threshold === 0n ? 0 : Number((conviction * 100n) / threshold);
 
-interface ProposalCardProps {
-  proposal: MockProposal;
-  isConnected: boolean;
-}
+  function handlePrimaryAction() {
+    if (!parsedAmount) return;
 
-function ProposalCard({ proposal, isConnected }: ProposalCardProps) {
-  const [stakeInput, setStakeInput] = useState("");
-  const { writeContract, isPending } = useWriteContract();
+    if (needsApproval) {
+      writeContract({
+        address: CONTRACTS.token,
+        abi: COMMONWEALTH_TOKEN_ABI,
+        functionName: "approve",
+        args: [CONTRACTS.convictionVoting, parsedAmount * 10n],
+      });
+      return;
+    }
 
-  function handleStake() {
-    if (!stakeInput || !isConnected) return;
     writeContract({
-      address: CONTRACT_ADDRESS,
+      address: CONTRACTS.convictionVoting,
       abi: CONVICTION_VOTING_ABI,
       functionName: "stakeOnProposal",
-      args: [BigInt(proposal.id), parseEther(stakeInput)],
+      args: [proposalId, parsedAmount],
     });
   }
 
-  const pct = Math.min(Math.round((proposal.conviction / proposal.threshold) * 100), 100);
-
   return (
-    <div className="bg-bg-card border border-border rounded-card p-5">
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-[10px] text-text-dim bg-bg-surface px-1.5 py-0.5 rounded">
-            #{proposal.id}
-          </span>
-          <h3 className="font-sans text-sm font-medium text-text-primary">{proposal.title}</h3>
+    <article className="bg-bg-card border border-border rounded-card p-5 space-y-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim bg-bg-surface border border-border rounded-full px-2 py-1">
+              Proposal #{proposalId.toString()}
+            </span>
+            {canExecute && (
+              <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-accent-green bg-accent-green/10 border border-accent-green/30 rounded-full px-2 py-1">
+                Ready to execute
+              </span>
+            )}
+          </div>
+          <h3 className="font-serif text-2xl text-text-primary">{title}</h3>
+          <p className="text-sm text-text-muted max-w-3xl">{summary}</p>
         </div>
-        <span
-          className={`font-mono text-[10px] px-2 py-0.5 rounded shrink-0 ${
-            proposal.daysLeft <= 2 ? "text-accent-red bg-accent-red/10" : "text-text-muted bg-bg-surface"
-          }`}
-        >
-          {proposal.daysLeft}d left
-        </span>
+        <div className="text-left lg:text-right">
+          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim mb-2">Requested</p>
+          <p className="font-mono text-xl text-text-primary">{formatEth(requestedAmount)} ETH</p>
+          <p className="font-mono text-xs text-text-dim mt-1">{truncateAddress(proposer)}</p>
+        </div>
       </div>
 
-      <p className="font-mono text-xs text-text-dim mb-3">
-        {proposal.proposer} · Ξ {proposal.requestedAmount.toFixed(2)} requested
-      </p>
-
-      <div className="mb-3">
-        <div className="flex justify-between mb-1">
-          <span className="font-mono text-[10px] text-text-dim">Conviction</span>
-          <span className="font-mono text-[10px] text-text-muted">{pct}%</span>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim mb-2">Conviction</p>
+          <p className="font-mono text-sm text-text-primary mb-2">{Math.min(progress, 999).toFixed(0)}%</p>
+          <div className="h-2 rounded-full bg-bg-surface overflow-hidden">
+            <div
+              className={`h-full rounded-full ${progress >= 100 ? "bg-accent-green" : progress >= 60 ? "bg-accent-yellow" : "bg-accent-purple"}`}
+              style={{ width: `${Math.min(progress, 100)}%` }}
+            />
+          </div>
         </div>
-        <ConvictionBar conviction={proposal.conviction} threshold={proposal.threshold} />
-        <p className="font-mono text-[10px] text-text-dim mt-1">
-          {proposal.staked.toLocaleString()} tokens staked
-        </p>
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim mb-2">Current / threshold</p>
+          <p className="font-mono text-sm text-text-primary">
+            {formatToken(conviction)} / {formatToken(threshold)}
+          </p>
+        </div>
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim mb-2">Your stake</p>
+          <p className="font-mono text-sm text-text-primary">{formatToken(myStake)} CWT</p>
+        </div>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-3 md:flex-row">
         <input
           type="number"
-          value={stakeInput}
-          onChange={(e) => setStakeInput(e.target.value)}
-          placeholder="Amount (tokens)"
-          className="flex-1 bg-bg-surface border border-border rounded px-3 py-1.5 font-mono text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-border-hover"
+          min="0"
+          step="0.1"
+          value={amount}
+          onChange={(event) => setAmount(event.target.value)}
+          className="flex-1 rounded-full border border-border bg-bg-surface px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-green"
         />
         <button
-          onClick={handleStake}
-          disabled={!isConnected || isPending || !stakeInput}
-          className="font-mono text-xs bg-accent-green text-bg-page px-4 py-1.5 rounded font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-accent-green/90 transition-colors"
+          onClick={handlePrimaryAction}
+          disabled={!isConnected || isPending || parsedAmount === null}
+          className="font-mono text-xs rounded-full px-4 py-2 bg-accent-green text-bg-page disabled:opacity-40"
         >
-          {isPending ? "Staking…" : "Stake conviction"}
+          {needsApproval ? "Approve CWT" : isPending ? "Confirming" : "Stake conviction"}
         </button>
+        {canExecute && (
+          <button
+            onClick={() =>
+              writeContract({
+                address: CONTRACTS.convictionVoting,
+                abi: CONVICTION_VOTING_ABI,
+                functionName: "executeProposal",
+                args: [proposalId],
+              })
+            }
+            disabled={isPending}
+            className="font-mono text-xs rounded-full px-4 py-2 border border-accent-cyan/40 text-accent-cyan bg-accent-cyan/10 disabled:opacity-40"
+          >
+            Execute
+          </button>
+        )}
       </div>
-      {!isConnected && (
-        <p className="font-mono text-[10px] text-text-dim mt-1">Connect wallet to stake</p>
-      )}
-    </div>
+    </article>
   );
 }
 
 export function ProposalList() {
-  const { isConnected } = useAccount();
   const [showCreate, setShowCreate] = useState(false);
+  const { data } = useProtocolData();
+  const tokenAllowance = data?.wallet?.convictionAllowance ?? 0n;
 
   return (
-    <section>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="font-serif text-2xl text-text-primary">Governance Proposals</h2>
+    <section id="governance" className="space-y-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-accent-green mb-2">Public governance</p>
+          <h2 className="font-serif text-3xl text-text-primary">Treasury proposals with live conviction</h2>
+          <p className="text-sm text-text-muted mt-2">
+            Every proposal is backed by a real Sepolia treasury balance and token stake. Proposal metadata is stored onchain as portable data URIs, not mock JSON.
+          </p>
+        </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="font-mono text-xs bg-accent-green text-bg-page px-4 py-2 rounded font-medium hover:bg-accent-green/90 transition-colors"
+          className="font-mono text-xs rounded-full px-4 py-2 bg-accent-green text-bg-page w-fit"
         >
-          + New Proposal
+          New proposal
         </button>
       </div>
 
-      <div className="flex flex-col gap-3">
-        {MOCK_PROPOSALS.map((p) => (
-          <ProposalCard key={p.id} proposal={p} isConnected={isConnected} />
+      <div className="space-y-4">
+        {data?.proposals.map((proposal) => (
+          <ProposalCard
+            key={proposal.id.toString()}
+            proposalId={proposal.id}
+            title={proposal.metadata?.title?.toString() ?? `Proposal ${proposal.id.toString()}`}
+            summary={proposal.metadata?.summary?.toString() ?? "Onchain proposal metadata is available."}
+            proposer={proposal.proposer}
+            requestedAmount={proposal.requestedAmount}
+            conviction={proposal.currentConviction}
+            threshold={proposal.threshold}
+            myStake={proposal.myStake}
+            canExecute={!proposal.executed && !proposal.cancelled && proposal.currentConviction >= proposal.threshold}
+            tokenAllowance={tokenAllowance}
+          />
         ))}
       </div>
 

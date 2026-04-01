@@ -1,170 +1,148 @@
 "use client";
 
-import { useState } from "react";
-import { useWriteContract } from "wagmi";
-import { parseEther, isAddress } from "viem";
+import { useEffect, useState } from "react";
 import { CONVICTION_VOTING_ABI } from "@commonwealth/sdk";
-import { useFilecoin } from "@/hooks/useFilecoin";
-
-const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONVICTION_VOTING_ADDRESS ?? "0x0") as `0x${string}`;
+import { isAddress, parseEther } from "viem";
+import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { CONTRACTS } from "@/lib/contracts";
+import { encodeMetadataUri } from "@/lib/metadata";
+import { useRefreshProtocolData } from "@/hooks/useProtocolData";
 
 interface CreateProposalModalProps {
   onClose: () => void;
 }
 
 export function CreateProposalModal({ onClose }: CreateProposalModalProps) {
+  const { address } = useAccount();
+  const refreshProtocolData = useRefreshProtocolData();
+  const { data: hash, isPending, writeContract } = useWriteContract();
+  const { isSuccess } = useWaitForTransactionReceipt({ hash });
+
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [amount, setAmount] = useState("");
-  const [beneficiary, setBeneficiary] = useState("");
-  const [step, setStep] = useState<"form" | "uploading" | "submitting" | "done">("form");
+  const [summary, setSummary] = useState("");
+  const [requestedAmount, setRequestedAmount] = useState("");
+  const [beneficiary, setBeneficiary] = useState(address ?? "");
   const [error, setError] = useState<string | null>(null);
 
-  const { uploadJSON, isUploading } = useFilecoin();
-  const { writeContract, isPending } = useWriteContract();
+  useEffect(() => {
+    if (isSuccess) {
+      void refreshProtocolData();
+      onClose();
+    }
+  }, [isSuccess, onClose, refreshProtocolData]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  useEffect(() => {
+    if (address) {
+      setBeneficiary(address);
+    }
+  }, [address]);
+
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setError(null);
 
-    if (!title || !description || !amount || !beneficiary) {
-      setError("All fields are required.");
+    if (!title || !summary || !requestedAmount || !beneficiary) {
+      setError("Every field is required.");
       return;
     }
+
     if (!isAddress(beneficiary)) {
-      setError("Invalid beneficiary address.");
+      setError("Beneficiary address is invalid.");
       return;
     }
 
-    try {
-      setStep("uploading");
-      const cid = await uploadJSON({ title, description, createdAt: Date.now() });
-
-      setStep("submitting");
-      writeContract(
-        {
-          address: CONTRACT_ADDRESS,
-          abi: CONVICTION_VOTING_ABI,
-          functionName: "createProposal",
-          args: [cid, parseEther(amount), beneficiary as `0x${string}`],
-        },
-        {
-          onSuccess: () => setStep("done"),
-          onError: (err) => {
-            setError(err.message);
-            setStep("form");
-          },
-        },
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
-      setStep("form");
-    }
+    writeContract({
+      address: CONTRACTS.convictionVoting,
+      abi: CONVICTION_VOTING_ABI,
+      functionName: "createProposal",
+      args: [
+        encodeMetadataUri({
+          title,
+          summary,
+          createdAt: new Date().toISOString(),
+          lane: "public-governance",
+        }),
+        parseEther(requestedAmount),
+        beneficiary,
+      ],
+    });
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-bg-page/80 backdrop-blur z-50 absolute inset-0">
-      <div className="bg-bg-card border border-border rounded-card w-full max-w-lg mx-4 p-6">
+    <div className="fixed inset-0 z-50 bg-bg-page/75 backdrop-blur-sm flex items-center justify-center px-4">
+      <div className="w-full max-w-xl rounded-card border border-border bg-bg-card p-6">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="font-serif text-xl text-text-primary">New Proposal</h2>
-          <button
-            onClick={onClose}
-            className="font-mono text-text-dim hover:text-text-muted text-lg"
-          >
-            ×
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-accent-green mb-2">New proposal</p>
+            <h3 className="font-serif text-2xl text-text-primary">Publish a treasury request</h3>
+          </div>
+          <button onClick={onClose} className="font-mono text-sm text-text-muted hover:text-text-primary">
+            Close
           </button>
         </div>
 
-        {step === "done" ? (
-          <div className="text-center py-8">
-            <p className="font-mono text-accent-green text-sm mb-4">Proposal submitted!</p>
-            <button
-              onClick={onClose}
-              className="font-mono text-xs bg-accent-green text-bg-page px-4 py-2 rounded"
-            >
-              Close
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="font-mono text-[10px] uppercase tracking-widest text-text-dim block mb-1">
-                Title
-              </label>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full bg-bg-surface border border-border rounded px-3 py-2 font-sans text-sm text-text-primary placeholder:text-text-dim focus:outline-none focus:border-border-hover"
-                placeholder="Proposal title"
-              />
-            </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <label className="block">
+            <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim block mb-2">Title</span>
+            <input
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              className="w-full rounded-card border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-green"
+            />
+          </label>
 
-            <div>
-              <label className="font-mono text-[10px] uppercase tracking-widest text-text-dim block mb-1">
-                Description
-              </label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={4}
-                className="w-full bg-bg-surface border border-border rounded px-3 py-2 font-sans text-sm text-text-primary placeholder:text-text-dim focus:outline-none focus:border-border-hover resize-none"
-                placeholder="Describe the proposal..."
-              />
-            </div>
+          <label className="block">
+            <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim block mb-2">Summary</span>
+            <textarea
+              value={summary}
+              onChange={(event) => setSummary(event.target.value)}
+              rows={4}
+              className="w-full rounded-card border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-green resize-none"
+            />
+          </label>
 
-            <div>
-              <label className="font-mono text-[10px] uppercase tracking-widest text-text-dim block mb-1">
-                Requested Amount (ETH)
-              </label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label className="block">
+              <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim block mb-2">Requested ETH</span>
               <input
                 type="number"
-                step="0.001"
                 min="0"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="w-full bg-bg-surface border border-border rounded px-3 py-2 font-mono text-sm text-text-primary placeholder:text-text-dim focus:outline-none focus:border-border-hover"
-                placeholder="0.00"
+                step="0.001"
+                value={requestedAmount}
+                onChange={(event) => setRequestedAmount(event.target.value)}
+                className="w-full rounded-card border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-green"
               />
-            </div>
+            </label>
 
-            <div>
-              <label className="font-mono text-[10px] uppercase tracking-widest text-text-dim block mb-1">
-                Beneficiary Address
-              </label>
+            <label className="block">
+              <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim block mb-2">Beneficiary</span>
               <input
                 value={beneficiary}
-                onChange={(e) => setBeneficiary(e.target.value)}
-                className="w-full bg-bg-surface border border-border rounded px-3 py-2 font-mono text-sm text-text-primary placeholder:text-text-dim focus:outline-none focus:border-border-hover"
-                placeholder="0x..."
+                onChange={(event) => setBeneficiary(event.target.value)}
+                className="w-full rounded-card border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-green"
               />
-            </div>
+            </label>
+          </div>
 
-            {error && (
-              <p className="font-mono text-xs text-accent-red">{error}</p>
-            )}
+          {error && <p className="font-mono text-xs text-accent-red">{error}</p>}
 
-            <div className="flex gap-3 pt-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-1 font-mono text-xs border border-border text-text-muted hover:border-border-hover px-4 py-2 rounded transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isUploading || isPending}
-                className="flex-1 font-mono text-xs bg-accent-green text-bg-page px-4 py-2 rounded font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-accent-green/90 transition-colors"
-              >
-                {step === "uploading"
-                  ? "Uploading to Filecoin…"
-                  : step === "submitting"
-                    ? "Submitting tx…"
-                    : "Submit Proposal"}
-              </button>
-            </div>
-          </form>
-        )}
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="font-mono text-xs border border-border rounded-full px-4 py-2 text-text-muted hover:text-text-primary hover:border-border-hover"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isPending}
+              className="font-mono text-xs rounded-full px-4 py-2 bg-accent-green text-bg-page disabled:opacity-40"
+            >
+              {isPending ? "Submitting" : "Submit proposal"}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
