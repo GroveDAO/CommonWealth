@@ -1,38 +1,37 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 
-const TABS = [
-  { id: "dashboard", label: "Dashboard" },
-  { id: "governance", label: "Governance" },
-  { id: "impact", label: "Fund Impact" },
-  { id: "savings", label: "Savings" },
-  { id: "depin", label: "DePIN" },
-  { id: "simulate", label: "Simulate" },
+const SECTIONS = [
+  { href: "/", label: "Overview" },
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/governance", label: "Governance" },
+  { href: "/private-voting", label: "Private voting" },
+  { href: "/impact", label: "Impact" },
+  { href: "/savings", label: "Savings" },
+  { href: "/depin", label: "DePIN" },
 ] as const;
 
-type TabId = (typeof TABS)[number]["id"];
-
 export function AppNav() {
-  const [active, setActive] = useState<TabId>("dashboard");
+  const pathname = usePathname();
 
   return (
-    <nav className="border-b border-border bg-bg-page">
-      <div className="max-w-7xl mx-auto px-6">
-        <ul className="flex items-center gap-0">
-          {TABS.map((tab) => (
-            <li key={tab.id}>
-              <button
-                onClick={() => setActive(tab.id)}
-                className={[
-                  "font-sans text-sm px-4 py-3 transition-colors border-b-2",
-                  active === tab.id
-                    ? "border-accent-green text-accent-green"
-                    : "border-transparent text-text-dim hover:text-text-muted",
-                ].join(" ")}
+    <nav className="sticky top-[89px] z-40 border-b border-border bg-bg-page/80 backdrop-blur">
+      <div className="max-w-7xl mx-auto px-6 overflow-x-auto">
+        <ul className="flex items-center gap-2 py-3 min-w-max">
+          {SECTIONS.map((section) => (
+            <li key={section.href}>
+              <Link
+                href={section.href}
+                className={`font-mono text-xs uppercase tracking-[0.18em] rounded-full px-3 py-1.5 transition-colors border ${
+                  pathname === section.href
+                    ? "border-accent-green/40 bg-accent-green/10 text-accent-green"
+                    : "border-transparent text-text-muted hover:text-accent-green hover:border-border"
+                }`}
               >
-                {tab.label}
-              </button>
+                {section.label}
+              </Link>
             </li>
           ))}
         </ul>

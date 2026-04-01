@@ -2,39 +2,49 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Google Fonts — loaded at runtime for production builds */
 @import url("https://fonts.googleapis.com/css2?family=DM+Serif+Display:wght@400&family=DM+Mono:wght@300;400;500&family=Syne:wght@400;500;600;700&display=swap");
 
 :root {
-  --font-dm-serif: "DM Serif Display", Georgia, "Times New Roman", serif;
-  --font-dm-mono: "DM Mono", "SF Mono", "Fira Mono", "Cascadia Code", monospace;
-  --font-syne: "Syne", Inter, system-ui, sans-serif;
+  --font-dm-serif: "DM Serif Display", Georgia, serif;
+  --font-dm-mono: "DM Mono", monospace;
+  --font-syne: "Syne", sans-serif;
 }
 
 * {
   box-sizing: border-box;
 }
 
-html,
+html {
+  scroll-behavior: smooth;
+}
+
 body {
-  background-color: #0a0a08;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(200, 240, 96, 0.16), transparent 26%),
+    radial-gradient(circle at top right, rgba(96, 216, 200, 0.14), transparent 22%),
+    linear-gradient(180deg, #0a0a08 0%, #090a0d 100%);
   color: #e8e6dc;
   font-family: var(--font-syne);
 }
 
-/* Custom scrollbar */
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #2e2e2a;
+  background: #1a1c1a;
 }
 
 ::-webkit-scrollbar-thumb {
   background: #4a4a44;
-  border-radius: 3px;
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
