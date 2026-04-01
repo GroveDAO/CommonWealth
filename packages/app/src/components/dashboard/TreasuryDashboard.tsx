@@ -1,145 +1,134 @@
 "use client";
 
 import {
-  AreaChart,
-  Area,
+  Bar,
+  BarChart,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
-  ResponsiveContainer,
 } from "recharts";
+import { formatEther, formatUnits } from "viem";
+import { formatEth, formatToken } from "@/lib/format";
+import { useProtocolData } from "@/hooks/useProtocolData";
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-const grantData = MONTHS.map((month, i) => ({
-  month,
-  granted: Math.round(12000 + Math.random() * 8000 + i * 1500),
-  delivered: Math.round(10000 + Math.random() * 6000 + i * 1200),
-}));
-
-const allocationData = [
-  { name: "Governance", value: 35, color: "#C8F060" },
-  { name: "Impact Fund", value: 28, color: "#60D8C8" },
-  { name: "Savings", value: 20, color: "#A080F8" },
-  { name: "DePIN", value: 17, color: "#F0C040" },
-];
-
-interface StatCardProps {
-  label: string;
-  value: string;
-  change: string;
-  positive: boolean;
-}
-
-function StatCard({ label, value, change, positive }: StatCardProps) {
+function StatCard({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
-    <div className="bg-bg-card border border-border p-5 rounded-card">
-      <p className="font-mono text-[10px] uppercase tracking-widest text-text-dim mb-2">{label}</p>
+    <div className="bg-bg-card border border-border rounded-card p-5">
+      <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim mb-2">{label}</p>
       <p className="font-mono text-2xl text-text-primary mb-1">{value}</p>
-      <p className={`font-mono text-xs ${positive ? "text-accent-green" : "text-accent-red"}`}>
-        {change}
-      </p>
+      <p className="font-sans text-sm text-text-muted">{detail}</p>
     </div>
   );
 }
 
 export function TreasuryDashboard() {
-  return (
-    <section>
-      <h2 className="font-serif text-2xl text-text-primary mb-6">Treasury Overview</h2>
+  const { data, isLoading } = useProtocolData();
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-border mb-6">
-        <StatCard label="Treasury Balance" value="Ξ 847.32" change="↑ 12.4% this month" positive />
-        <StatCard label="Total Granted" value="Ξ 312.08" change="↑ 8.2% vs last month" positive />
-        <StatCard label="Active Proposals" value="14" change="↓ 2 from last week" positive={false} />
-        <StatCard label="Avg ROI" value="3.24×" change="↑ 0.18 this quarter" positive />
+  const allocationData = data
+    ? [
+        { name: "Treasury ETH", value: Number(formatEther(data.balances.convictionTreasury)), color: "#C8F060" },
+        { name: "Impact ETH", value: Number(formatEther(data.balances.impactTreasury)), color: "#60D8C8" },
+        { name: "Savings escrow", value: Number(formatUnits(data.balances.savingsEscrow, 18)), color: "#A080F8" },
+        { name: "DePIN rewards", value: Number(formatUnits(data.balances.depinRewardPool, 18)), color: "#F0C040" },
+      ].filter((entry) => entry.value > 0)
+    : [];
+
+  const convictionData = data
+    ? data.proposals.map((proposal) => ({
+        name: `#${proposal.id.toString()}`,
+        progress: Number((proposal.currentConviction * 100n) / (proposal.threshold === 0n ? 1n : proposal.threshold)),
+      }))
+    : [];
+
+  return (
+    <section id="dashboard" className="space-y-6">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-accent-green mb-2">Protocol state</p>
+          <h2 className="font-serif text-3xl text-text-primary">Live treasury and coordination overview</h2>
+        </div>
+        <div className="font-mono text-xs text-text-muted border border-border rounded-full px-3 py-1.5 bg-bg-card">
+          {isLoading ? "Loading Sepolia" : "Synced from Sepolia"}
+        </div>
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-px bg-border">
-        {/* Area Chart */}
-        <div className="col-span-2 bg-bg-card border border-border p-5 rounded-card">
-          <p className="font-mono text-[10px] uppercase tracking-widest text-text-dim mb-4">
-            Granted vs Delivered Value (12 months)
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <StatCard
+          label="Treasury Balance"
+          value={data ? `${formatEth(data.balances.convictionTreasury)} ETH` : "0 ETH"}
+          detail="Immediately available for grant execution"
+        />
+        <StatCard
+          label="Distributed Rewards"
+          value={data ? formatToken(data.balances.distributedRewards) : "0"}
+          detail="Attestation and DePIN rewards claimed"
+        />
+        <StatCard
+          label="Active Circles"
+          value={data ? `${data.circles.filter((circle) => Number(circle.state) === 1).length}` : "0"}
+          detail="Savings circles currently mid-rotation"
+        />
+        <StatCard
+          label="Private Ballots"
+          value={data ? `${data.privateProposals.reduce((total, proposal) => total + Number(proposal.ballotCount), 0)}` : "0"}
+          detail="Encrypted conviction ballots verified onchain"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[1.5fr,1fr] gap-4">
+        <div className="bg-bg-card border border-border rounded-card p-5">
+          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim mb-4">
+            Proposal conviction progress
           </p>
-          <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={grantData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-              <defs>
-                <linearGradient id="gradGranted" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#C8F060" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#C8F060" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="gradDelivered" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#60D8C8" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#60D8C8" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2E2E2A" />
-              <XAxis dataKey="month" tick={{ fill: "#5A5A54", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "#5A5A54", fontSize: 11 }} axisLine={false} tickLine={false} />
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={convictionData}>
+              <XAxis dataKey="name" tick={{ fill: "#8A8880", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "#8A8880", fontSize: 11 }} axisLine={false} tickLine={false} />
               <Tooltip
-                contentStyle={{ background: "#111110", border: "1px solid #2E2E2A", borderRadius: 4 }}
-                labelStyle={{ color: "#8A8880" }}
-                itemStyle={{ color: "#E8E6DC" }}
+                contentStyle={{ background: "#111110", border: "1px solid #2E2E2A", borderRadius: 6 }}
+                formatter={(value: number) => [`${Math.min(value, 999).toFixed(0)}%`, "Threshold progress"]}
               />
-              <Area
-                type="monotone"
-                dataKey="granted"
-                stroke="#C8F060"
-                strokeWidth={2}
-                fill="url(#gradGranted)"
-                name="Granted"
-              />
-              <Area
-                type="monotone"
-                dataKey="delivered"
-                stroke="#60D8C8"
-                strokeWidth={2}
-                fill="url(#gradDelivered)"
-                name="Delivered"
-              />
-            </AreaChart>
+              <Bar dataKey="progress" radius={[4, 4, 0, 0]}>
+                {convictionData.map((entry, index) => (
+                  <Cell
+                    key={entry.name}
+                    fill={index % 3 === 0 ? "#C8F060" : index % 3 === 1 ? "#60D8C8" : "#A080F8"}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
           </ResponsiveContainer>
         </div>
 
-        {/* Pie Chart */}
-        <div className="bg-bg-card border border-border p-5 rounded-card">
-          <p className="font-mono text-[10px] uppercase tracking-widest text-text-dim mb-4">
-            Allocation Breakdown
+        <div className="bg-bg-card border border-border rounded-card p-5">
+          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim mb-4">
+            Balance distribution
           </p>
-          <ResponsiveContainer width="100%" height={220}>
+          <ResponsiveContainer width="100%" height={280}>
             <PieChart>
-              <Pie
-                data={allocationData}
-                cx="50%"
-                cy="50%"
-                innerRadius={55}
-                outerRadius={80}
-                dataKey="value"
-              >
-                {allocationData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
+              <Pie data={allocationData} dataKey="value" cx="50%" cy="50%" innerRadius={58} outerRadius={92}>
+                {allocationData.map((entry) => (
+                  <Cell key={entry.name} fill={entry.color} />
                 ))}
               </Pie>
-              <Legend
-                iconType="circle"
-                iconSize={8}
-                formatter={(value) => (
-                  <span style={{ color: "#8A8880", fontSize: 11 }}>{value}</span>
-                )}
-              />
               <Tooltip
-                contentStyle={{ background: "#111110", border: "1px solid #2E2E2A", borderRadius: 4 }}
-                formatter={(value: number) => [`${value.toFixed(2)}%`, ""]}
+                contentStyle={{ background: "#111110", border: "1px solid #2E2E2A", borderRadius: 6 }}
+                formatter={(value: number) => [value.toLocaleString(undefined, { maximumFractionDigits: 2 }), ""]}
               />
             </PieChart>
           </ResponsiveContainer>
+          <div className="grid grid-cols-2 gap-3 mt-4">
+            {allocationData.map((entry) => (
+              <div key={entry.name} className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
+                <span className="font-mono text-xs text-text-muted">{entry.name}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </section>
