@@ -1,15 +1,17 @@
+import path from "node:path";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ["@commonwealth/sdk"],
-  env: {
-    NEXT_PUBLIC_WALLETCONNECT_ID: process.env.NEXT_PUBLIC_WALLETCONNECT_ID,
-    NEXT_PUBLIC_SEPOLIA_RPC: process.env.NEXT_PUBLIC_SEPOLIA_RPC,
-    NEXT_PUBLIC_CONVICTION_VOTING_ADDRESS: process.env.NEXT_PUBLIC_CONVICTION_VOTING_ADDRESS,
-    NEXT_PUBLIC_IMPACT_ATTESTATION_ADDRESS: process.env.NEXT_PUBLIC_IMPACT_ATTESTATION_ADDRESS,
-    NEXT_PUBLIC_SAVINGS_CIRCLE_ADDRESS: process.env.NEXT_PUBLIC_SAVINGS_CIRCLE_ADDRESS,
-    NEXT_PUBLIC_DEPIN_REGISTRY_ADDRESS: process.env.NEXT_PUBLIC_DEPIN_REGISTRY_ADDRESS,
-    NEXT_PUBLIC_SUBGRAPH_URL: process.env.NEXT_PUBLIC_SUBGRAPH_URL,
-    NEXT_PUBLIC_LIT_NETWORK: process.env.NEXT_PUBLIC_LIT_NETWORK,
+  outputFileTracingRoot: path.join(import.meta.dirname, "../../"),
+  webpack(config) {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      "pino-pretty": false,
+      "@react-native-async-storage/async-storage": false,
+    };
+
+    return config;
   },
 };
 
