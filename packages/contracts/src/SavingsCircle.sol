@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -41,6 +41,8 @@ contract SavingsCircle is ReentrancyGuard {
     event Payout(uint256 indexed id, address recipient, uint256 amount, uint256 cycle);
     event CircleCompleted(uint256 indexed id);
 
+    error InvalidCircle();
+
     /// @notice Create a new savings circle
     function create(
         string calldata _name,
@@ -69,6 +71,7 @@ contract SavingsCircle is ReentrancyGuard {
     /// @notice Join an open circle
     function join(uint256 _id) external {
         Circle storage c = circles[_id];
+        if (c.id == 0) revert InvalidCircle();
         require(c.state == State.Open, "Not open");
         require(!c.isMember[msg.sender], "Already member");
         require(c.members.length < c.maxMembers, "Full");
@@ -78,6 +81,7 @@ contract SavingsCircle is ReentrancyGuard {
     /// @notice Start the circle (creator only, must be full)
     function start(uint256 _id) external {
         Circle storage c = circles[_id];
+        if (c.id == 0) revert InvalidCircle();
         require(c.creator == msg.sender, "Not creator");
         require(c.state == State.Open, "Not open");
         require(c.members.length == c.maxMembers, "Not full");
@@ -95,6 +99,7 @@ contract SavingsCircle is ReentrancyGuard {
     /// @notice Contribute for current cycle
     function contribute(uint256 _id) external nonReentrant {
         Circle storage c = circles[_id];
+        if (c.id == 0) revert InvalidCircle();
         require(c.state == State.Active, "Not active");
         require(c.isMember[msg.sender], "Not member");
         require(!c.paid[c.cycle][msg.sender], "Already paid");
@@ -143,18 +148,36 @@ contract SavingsCircle is ReentrancyGuard {
     }
 
     function members(uint256 _id) external view returns (address[] memory) {
+        if (circles[_id].id == 0) revert InvalidCircle();
         return circles[_id].members;
     }
 
     function order(uint256 _id) external view returns (address[] memory) {
+        if (circles[_id].id == 0) revert InvalidCircle();
         return circles[_id].order;
     }
 
     function isMember(uint256 _id, address _addr) external view returns (bool) {
+        if (circles[_id].id == 0) revert InvalidCircle();
         return circles[_id].isMember[_addr];
     }
 
     function hasPaid(uint256 _id, uint256 _cycle, address _addr) external view returns (bool) {
+        if (circles[_id].id == 0) revert InvalidCircle();
         return circles[_id].paid[_cycle][_addr];
+    }
+
+    function memberCount(uint256 _id) external view returns (uint256) {
+        if (circles[_id].id == 0) revert InvalidCircle();
+        return circles[_id].members.length;
+    }
+
+    function currentRecipient(uint256 _id) external view returns (address) {
+        Circle storage c = circles[_id];
+        if (c.id == 0) revert InvalidCircle();
+        if (c.order.length == 0 || c.cycle == 0) {
+            return address(0);
+        }
+        return c.order[c.cycle - 1];
     }
 }

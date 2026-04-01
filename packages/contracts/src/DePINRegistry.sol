@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @title DePINRegistry
-/// @notice Oracle-verified data contributions with Filecoin CID + Lit Protocol access CID
+/// @notice Oracle-reviewed infrastructure data contributions with token rewards.
 contract DePINRegistry is AccessControl {
     bytes32 public constant ORACLE_ROLE = keccak256("ORACLE_ROLE");
 
@@ -20,9 +20,9 @@ contract DePINRegistry is AccessControl {
     struct Submission {
         uint256 id;
         address contributor;
-        string dataCID;
-        string litCID;
-        DataType dtype;
+        string metadataURI;
+        string accessURI;
+        DataType dataType;
         uint256 reward;
         bool verified;
         bool claimed;
@@ -30,24 +30,31 @@ contract DePINRegistry is AccessControl {
         uint256 quality;
     }
 
+    IERC20 public immutable rewardToken;
     uint256 public count;
-    mapping(uint256 => Submission) public subs;
+
+    mapping(uint256 => Submission) public submissions;
     mapping(address => uint256) public score;
     mapping(DataType => uint256) public baseReward;
-    IERC20 public token;
 
-    event Submitted(uint256 indexed id, address indexed contributor, DataType dtype);
+    event Submitted(uint256 indexed id, address indexed contributor, DataType dataType);
     event Verified(uint256 indexed id, uint256 quality, uint256 reward);
-    event Claimed(uint256 indexed id, address contributor, uint256 reward);
+    event Claimed(uint256 indexed id, address indexed contributor, uint256 reward);
+    event BaseRewardUpdated(DataType indexed dataType, uint256 reward);
 
     error AlreadyVerified();
-    error InvalidQuality();
     error CannotClaim();
+    error InvalidQuality();
+    error InvalidSubmission();
+    error InvalidURI();
 
-    constructor(address _token) {
-        token = IERC20(_token);
+    constructor(address rewardToken_) {
+        require(rewardToken_ != address(0), "Invalid token");
+
+        rewardToken = IERC20(rewardToken_);
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(ORACLE_ROLE, msg.sender);
+
         baseReward[DataType.Environmental] = 10 ether;
         baseReward[DataType.Infrastructure] = 15 ether;
         baseReward[DataType.Compute] = 20 ether;
@@ -55,57 +62,72 @@ contract DePINRegistry is AccessControl {
         baseReward[DataType.Bandwidth] = 5 ether;
     }
 
-    /// @notice Submit a new data contribution
-    function submit(string calldata _cid, string calldata _litCID, DataType _type) external returns (uint256) {
-        uint256 id = ++count;
-        subs[id] = Submission({
-            id: id,
+    function submit(
+        string calldata metadataURI,
+        string calldata accessURI,
+        DataType dataType
+    ) external returns (uint256 submissionId) {
+        if (bytes(metadataURI).length == 0 || bytes(accessURI).length == 0) revert InvalidURI();
+
+        submissionId = ++count;
+        submissions[submissionId] = Submission({
+            id: submissionId,
             contributor: msg.sender,
-            dataCID: _cid,
-            litCID: _litCID,
-            dtype: _type,
+            metadataURI: metadataURI,
+            accessURI: accessURI,
+            dataType: dataType,
             reward: 0,
             verified: false,
             claimed: false,
             submittedAt: block.timestamp,
             quality: 0
         });
-        emit Submitted(id, msg.sender, _type);
-        return id;
+
+        emit Submitted(submissionId, msg.sender, dataType);
     }
 
-    /// @notice Oracle verifies a submission and sets quality score
-    function verify(uint256 _id, uint256 _quality) external onlyRole(ORACLE_ROLE) {
-        Submission storage s = subs[_id];
-        if (s.verified) revert AlreadyVerified();
-        if (_quality > 100) revert InvalidQuality();
-        s.verified = true;
-        s.quality = _quality;
-        s.reward = baseReward[s.dtype] * _quality / 100;
-        score[s.contributor] += _quality;
-        emit Verified(_id, _quality, s.reward);
+    function verify(uint256 submissionId, uint256 quality) external onlyRole(ORACLE_ROLE) {
+        Submission storage submission = submissions[submissionId];
+        if (submission.id == 0) revert InvalidSubmission();
+        if (submission.verified) revert AlreadyVerified();
+        if (quality > 100) revert InvalidQuality();
+
+        submission.verified = true;
+        submission.quality = quality;
+        submission.reward = baseReward[submission.dataType] * quality / 100;
+
+        score[submission.contributor] += quality;
+
+        emit Verified(submissionId, quality, submission.reward);
     }
 
-    /// @notice Claim reward for a verified submission
-    function claim(uint256 _id) external {
-        Submission storage s = subs[_id];
-        if (s.contributor != msg.sender || !s.verified || s.claimed) revert CannotClaim();
-        s.claimed = true;
-        token.transfer(msg.sender, s.reward);
-        emit Claimed(_id, msg.sender, s.reward);
+    function claim(uint256 submissionId) external {
+        Submission storage submission = submissions[submissionId];
+        if (
+            submission.id == 0 ||
+            submission.contributor != msg.sender ||
+            !submission.verified ||
+            submission.claimed
+        ) {
+            revert CannotClaim();
+        }
+
+        submission.claimed = true;
+        rewardToken.transfer(msg.sender, submission.reward);
+
+        emit Claimed(submissionId, msg.sender, submission.reward);
     }
 
-    /// @notice Get contributor tier based on cumulative score
-    function tier(address _a) external view returns (string memory) {
-        uint256 s = score[_a];
-        if (s >= 1000) return "platinum";
-        if (s >= 500) return "gold";
-        if (s >= 100) return "silver";
+    function tier(address account) external view returns (string memory) {
+        uint256 totalScore = score[account];
+        if (totalScore >= 1_000) return "platinum";
+        if (totalScore >= 500) return "gold";
+        if (totalScore >= 100) return "silver";
         return "bronze";
     }
 
-    /// @notice Set base reward for a data type (admin only)
-    function setBaseReward(DataType _t, uint256 _r) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        baseReward[_t] = _r;
+    function setBaseReward(DataType dataType, uint256 reward) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        baseReward[dataType] = reward;
+        emit BaseRewardUpdated(dataType, reward);
     }
 }

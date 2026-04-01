@@ -1,158 +1,184 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.28;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title ConvictionVoting
-/// @notice Time-weighted governance using conviction voting mechanism
-contract ConvictionVoting is Ownable, ReentrancyGuard, Pausable {
-    IERC20 public immutable governanceToken;
-    uint256 public constant ALPHA_NUM = 9;
-    uint256 public constant ALPHA_DEN = 10;
-    uint256 public constant THRESHOLD_PCT = 10;
+/// @notice Time-weighted treasury governance for community grant proposals.
+contract ConvictionVoting is Ownable, Pausable, ReentrancyGuard {
+    uint256 public constant BASE_THRESHOLD_BPS = 500;
     uint256 public constant MIN_VOTING_PERIOD = 3 days;
 
     struct Proposal {
         uint256 id;
         address proposer;
-        string metadataCID;
+        string metadataURI;
         uint256 requestedAmount;
         address payable beneficiary;
-        uint256 convictionLast;
-        uint256 blockLast;
+        uint256 conviction;
+        uint256 totalStaked;
+        uint256 lastUpdatedBlock;
         bool executed;
         bool cancelled;
         uint256 createdAt;
     }
 
-    struct VoterState {
-        uint256 amount;
-        uint256 convictionLast;
-        uint256 blockLast;
-    }
-
+    IERC20 public immutable governanceToken;
     uint256 public proposalCount;
-    mapping(uint256 => Proposal) public proposals;
-    mapping(uint256 => mapping(address => VoterState)) public voterStates;
-    mapping(uint256 => uint256) public totalConviction;
     uint256 public fundBalance;
+
+    mapping(uint256 => Proposal) public proposals;
+    mapping(uint256 => mapping(address => uint256)) public stakes;
 
     event ProposalCreated(
         uint256 indexed id,
         address indexed proposer,
-        string metadataCID,
-        uint256 requestedAmount
+        string metadataURI,
+        uint256 requestedAmount,
+        address beneficiary
     );
-    event ConvictionUpdated(uint256 indexed proposalId, address indexed voter, uint256 conviction);
+    event StakeChanged(
+        uint256 indexed proposalId,
+        address indexed voter,
+        uint256 previousStake,
+        uint256 newStake,
+        uint256 currentConviction
+    );
     event ProposalExecuted(uint256 indexed id, address indexed beneficiary, uint256 amount);
     event ProposalCancelled(uint256 indexed id);
+    event TreasuryFunded(address indexed funder, uint256 amount, uint256 newBalance);
 
-    error ProposalNotFound();
     error AlreadyExecuted();
     error Cancelled();
     error InsufficientConviction();
     error InsufficientFunds();
+    error InvalidBeneficiary();
+    error InvalidMetadata();
+    error InvalidProposal();
     error VotingPeriodNotElapsed();
+    error ZeroAmount();
 
-    constructor(address _token) Ownable(msg.sender) {
-        governanceToken = IERC20(_token);
+    constructor(address token_) Ownable(msg.sender) {
+        if (token_ == address(0)) revert InvalidBeneficiary();
+        governanceToken = IERC20(token_);
     }
 
-    /// @notice Create a new funding proposal
-    function createProposal(string calldata _cid, uint256 _amount, address payable _beneficiary)
-        external
-        whenNotPaused
-        returns (uint256)
-    {
-        uint256 id = ++proposalCount;
-        proposals[id] = Proposal({
-            id: id,
+    function createProposal(
+        string calldata metadataURI,
+        uint256 requestedAmount,
+        address payable beneficiary
+    ) external whenNotPaused returns (uint256 proposalId) {
+        if (bytes(metadataURI).length == 0) revert InvalidMetadata();
+        if (beneficiary == address(0)) revert InvalidBeneficiary();
+        if (requestedAmount == 0) revert ZeroAmount();
+
+        proposalId = ++proposalCount;
+        proposals[proposalId] = Proposal({
+            id: proposalId,
             proposer: msg.sender,
-            metadataCID: _cid,
-            requestedAmount: _amount,
-            beneficiary: _beneficiary,
-            convictionLast: 0,
-            blockLast: block.number,
+            metadataURI: metadataURI,
+            requestedAmount: requestedAmount,
+            beneficiary: beneficiary,
+            conviction: 0,
+            totalStaked: 0,
+            lastUpdatedBlock: block.number,
             executed: false,
             cancelled: false,
             createdAt: block.timestamp
         });
-        emit ProposalCreated(id, msg.sender, _cid, _amount);
-        return id;
+
+        emit ProposalCreated(proposalId, msg.sender, metadataURI, requestedAmount, beneficiary);
     }
 
-    /// @notice Stake tokens on a proposal to build conviction
-    function stakeOnProposal(uint256 _id, uint256 _amount) external nonReentrant whenNotPaused {
-        _active(_id);
-        governanceToken.transferFrom(msg.sender, address(this), _amount);
-        _updateConviction(_id, msg.sender);
-        voterStates[_id][msg.sender].amount += _amount;
-        voterStates[_id][msg.sender].blockLast = block.number;
-        emit ConvictionUpdated(_id, msg.sender, voterStates[_id][msg.sender].convictionLast);
+    function stakeOnProposal(uint256 proposalId, uint256 amount) external nonReentrant whenNotPaused {
+        if (amount == 0) revert ZeroAmount();
+
+        Proposal storage proposal = _activeProposal(proposalId);
+        governanceToken.transferFrom(msg.sender, address(this), amount);
+
+        _accrue(proposal);
+
+        uint256 previousStake = stakes[proposalId][msg.sender];
+        uint256 newStake = previousStake + amount;
+
+        stakes[proposalId][msg.sender] = newStake;
+        proposal.totalStaked += amount;
+
+        emit StakeChanged(proposalId, msg.sender, previousStake, newStake, proposal.conviction);
     }
 
-    /// @notice Withdraw staked tokens from a proposal
-    function withdrawStake(uint256 _id, uint256 _amount) external nonReentrant {
-        VoterState storage v = voterStates[_id][msg.sender];
-        require(v.amount >= _amount, "Insufficient stake");
-        _updateConviction(_id, msg.sender);
-        v.amount -= _amount;
-        governanceToken.transfer(msg.sender, _amount);
+    function withdrawStake(uint256 proposalId, uint256 amount) external nonReentrant {
+        if (amount == 0) revert ZeroAmount();
+
+        Proposal storage proposal = _activeProposal(proposalId);
+        uint256 currentStake = stakes[proposalId][msg.sender];
+        require(currentStake >= amount, "Insufficient stake");
+
+        _accrue(proposal);
+
+        uint256 newStake = currentStake - amount;
+        stakes[proposalId][msg.sender] = newStake;
+        proposal.totalStaked -= amount;
+
+        governanceToken.transfer(msg.sender, amount);
+
+        emit StakeChanged(proposalId, msg.sender, currentStake, newStake, proposal.conviction);
     }
 
-    /// @notice Execute a proposal that has reached conviction threshold
-    function executeProposal(uint256 _id) external nonReentrant whenNotPaused {
-        Proposal storage p = _active(_id);
-        if (block.timestamp < p.createdAt + MIN_VOTING_PERIOD) revert VotingPeriodNotElapsed();
-        if (totalConviction[_id] < governanceToken.totalSupply() * THRESHOLD_PCT / 100) revert InsufficientConviction();
-        if (fundBalance < p.requestedAmount) revert InsufficientFunds();
-        p.executed = true;
-        fundBalance -= p.requestedAmount;
-        p.beneficiary.transfer(p.requestedAmount);
-        emit ProposalExecuted(_id, p.beneficiary, p.requestedAmount);
-    }
+    function executeProposal(uint256 proposalId) external nonReentrant whenNotPaused {
+        Proposal storage proposal = _activeProposal(proposalId);
 
-    /// @notice Cancel a proposal (proposer or owner only)
-    function cancelProposal(uint256 _id) external {
-        Proposal storage p = proposals[_id];
-        require(p.proposer == msg.sender || owner() == msg.sender, "Forbidden");
-        p.cancelled = true;
-        emit ProposalCancelled(_id);
-    }
-
-    /// @notice Calculate current conviction for a voter on a proposal
-    function getCurrentConviction(uint256 _id, address _voter) public view returns (uint256) {
-        VoterState memory v = voterStates[_id][_voter];
-        if (v.amount == 0) return v.convictionLast;
-        uint256 c = v.convictionLast;
-        uint256 blocks = block.number - v.blockLast;
-        for (uint256 i = 0; i < blocks; i++) {
-            c = c * ALPHA_NUM / ALPHA_DEN + v.amount;
+        if (block.timestamp < proposal.createdAt + MIN_VOTING_PERIOD) {
+            revert VotingPeriodNotElapsed();
         }
-        return c;
+
+        _accrue(proposal);
+
+        if (proposal.conviction < convictionThreshold(proposalId)) revert InsufficientConviction();
+        if (fundBalance < proposal.requestedAmount) revert InsufficientFunds();
+
+        proposal.executed = true;
+        fundBalance -= proposal.requestedAmount;
+        proposal.beneficiary.transfer(proposal.requestedAmount);
+
+        emit ProposalExecuted(proposalId, proposal.beneficiary, proposal.requestedAmount);
     }
 
-    function _updateConviction(uint256 _id, address _voter) internal {
-        VoterState storage v = voterStates[_id][_voter];
-        uint256 newC = getCurrentConviction(_id, _voter);
-        totalConviction[_id] += newC - v.convictionLast;
-        v.convictionLast = newC;
-        v.blockLast = block.number;
+    function cancelProposal(uint256 proposalId) external {
+        Proposal storage proposal = proposals[proposalId];
+        if (proposal.id == 0) revert InvalidProposal();
+        require(proposal.proposer == msg.sender || owner() == msg.sender, "Forbidden");
+        if (proposal.executed) revert AlreadyExecuted();
+        proposal.cancelled = true;
+
+        emit ProposalCancelled(proposalId);
     }
 
-    function _active(uint256 _id) internal view returns (Proposal storage p) {
-        p = proposals[_id];
-        if (p.id == 0) revert ProposalNotFound();
-        if (p.executed) revert AlreadyExecuted();
-        if (p.cancelled) revert Cancelled();
+    function convictionThreshold(uint256 proposalId) public view returns (uint256) {
+        Proposal storage proposal = proposals[proposalId];
+        if (proposal.id == 0) revert InvalidProposal();
+
+        uint256 totalSupply = governanceToken.totalSupply();
+        uint256 baseThreshold = totalSupply * BASE_THRESHOLD_BPS / 10_000;
+        uint256 treasuryBalance = fundBalance == 0 ? 1 ether : fundBalance;
+        uint256 requestedShareBps = proposal.requestedAmount * 10_000 / treasuryBalance;
+
+        return baseThreshold + (baseThreshold * requestedShareBps / 10_000);
     }
 
-    /// @notice Deposit ETH into the fund
+    function getCurrentConviction(uint256 proposalId) public view returns (uint256) {
+        Proposal storage proposal = proposals[proposalId];
+        if (proposal.id == 0) revert InvalidProposal();
+
+        uint256 blocksElapsed = block.number - proposal.lastUpdatedBlock;
+        return proposal.conviction + proposal.totalStaked * blocksElapsed;
+    }
+
     function deposit() external payable {
-        fundBalance += msg.value;
+        _fundTreasury(msg.sender, msg.value);
     }
 
     function pause() external onlyOwner {
@@ -163,7 +189,26 @@ contract ConvictionVoting is Ownable, ReentrancyGuard, Pausable {
         _unpause();
     }
 
+    function _activeProposal(uint256 proposalId) internal view returns (Proposal storage proposal) {
+        proposal = proposals[proposalId];
+        if (proposal.id == 0) revert InvalidProposal();
+        if (proposal.executed) revert AlreadyExecuted();
+        if (proposal.cancelled) revert Cancelled();
+    }
+
+    function _accrue(Proposal storage proposal) internal {
+        proposal.conviction = getCurrentConviction(proposal.id);
+        proposal.lastUpdatedBlock = block.number;
+    }
+
+    function _fundTreasury(address funder, uint256 amount) internal {
+        if (amount == 0) revert ZeroAmount();
+
+        fundBalance += amount;
+        emit TreasuryFunded(funder, amount, fundBalance);
+    }
+
     receive() external payable {
-        fundBalance += msg.value;
+        _fundTreasury(msg.sender, msg.value);
     }
 }
