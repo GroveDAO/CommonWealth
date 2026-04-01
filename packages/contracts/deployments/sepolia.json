@@ -1,0 +1,76 @@
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "deployedAt": "2026-03-31T15:26:43.363Z",
+  "deployer": "0x9f2EdCE3a34e42eaf8f965d4E14aDDd12Cf865f4",
+  "token": {
+    "address": "0x9a2088b06225d986EAFBeBC6b724e4e298E423ce",
+    "constructorArgs": [
+      "0x9f2EdCE3a34e42eaf8f965d4E14aDDd12Cf865f4",
+      "10000000000000000000000000",
+      "2500000000000000000000",
+      "86400"
+    ]
+  },
+  "convictionVoting": {
+    "address": "0xCe7b7301b29CC8D00a508a2900dc5D5B900176Af",
+    "constructorArgs": [
+      "0x9a2088b06225d986EAFBeBC6b724e4e298E423ce"
+    ]
+  },
+  "impactAttestation": {
+    "address": "0x4344e79d2f5d660cbBC8bdDC497B86eD3951d828",
+    "constructorArgs": [
+      2,
+      2,
+      1209600
+    ]
+  },
+  "savingsCircle": {
+    "address": "0x172229A5599683ff52e685A751BF87998FA6c11a",
+    "constructorArgs": []
+  },
+  "depinRegistry": {
+    "address": "0x4127C5192aAf3a33813eF2FC981711659a48A028",
+    "constructorArgs": [
+      "0x9a2088b06225d986EAFBeBC6b724e4e298E423ce"
+    ]
+  },
+  "privateConvictionVoting": {
+    "address": "0xA1D135E125e1C1B5713478266E18d85d66273a48",
+    "constructorArgs": [
+      "0x9f2EdCE3a34e42eaf8f965d4E14aDDd12Cf865f4"
+    ]
+  },
+  "seededAt": "2026-03-31T15:49:15.163Z",
+  "seed": {
+    "actors": {
+      "ade": "0xf8eaBEED4FDD3f5E2670c3A4993198168B954393",
+      "bira": "0xa7561FaeC008A184652E7122ef615EE279DbBE0B",
+      "chima": "0xEBb441e85f0dD5ff2B532F3d9509FbCa2FF2289F"
+    },
+    "publicProposalIds": [
+      "1",
+      "2",
+      "3"
+    ],
+    "privateProposalIds": [
+      "1",
+      "2",
+      "3"
+    ],
+    "attestationIds": [
+      "1",
+      "2"
+    ],
+    "circleIds": [
+      "1",
+      "2"
+    ],
+    "submissionIds": [
+      "1",
+      "2",
+      "3"
+    ]
+  }
+}
