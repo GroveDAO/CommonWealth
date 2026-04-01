@@ -1,13 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { useWriteContract } from "wagmi";
+import { useEffect, useState } from "react";
 import { DEPIN_REGISTRY_ABI, DataType } from "@commonwealth/sdk";
-import { useFilecoin } from "@/hooks/useFilecoin";
+import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { CONTRACTS } from "@/lib/contracts";
+import { encodeMetadataUri } from "@/lib/metadata";
+import { useRefreshProtocolData } from "@/hooks/useProtocolData";
 
-const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_DEPIN_REGISTRY_ADDRESS ?? "0x0") as `0x${string}`;
+interface SubmitDataModalProps {
+  onClose: () => void;
+}
 
-const DATA_TYPE_OPTIONS = [
+const DATA_TYPES = [
   { label: "Environmental", value: DataType.Environmental },
   { label: "Infrastructure", value: DataType.Infrastructure },
   { label: "Compute", value: DataType.Compute },
@@ -15,156 +19,128 @@ const DATA_TYPE_OPTIONS = [
   { label: "Bandwidth", value: DataType.Bandwidth },
 ];
 
-interface SubmitDataModalProps {
-  onClose: () => void;
-}
-
 export function SubmitDataModal({ onClose }: SubmitDataModalProps) {
-  const [description, setDescription] = useState("");
+  const refreshProtocolData = useRefreshProtocolData();
+  const { data: hash, isPending, writeContract } = useWriteContract();
+  const { isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  const [title, setTitle] = useState("");
+  const [summary, setSummary] = useState("");
+  const [region, setRegion] = useState("");
+  const [accessUri, setAccessUri] = useState("");
   const [dataType, setDataType] = useState<DataType>(DataType.Environmental);
-  const [litCID, setLitCID] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [step, setStep] = useState<"form" | "uploading" | "submitting" | "done">("form");
-  const [error, setError] = useState<string | null>(null);
 
-  const { uploadFile, isUploading } = useFilecoin();
-  const { writeContract, isPending } = useWriteContract();
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-
-    if (!description || !file) {
-      setError("Description and file are required.");
-      return;
+  useEffect(() => {
+    if (isSuccess) {
+      void refreshProtocolData();
+      onClose();
     }
+  }, [isSuccess, onClose, refreshProtocolData]);
 
-    try {
-      setStep("uploading");
-      const dataCID = await uploadFile(file);
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
 
-      setStep("submitting");
-      writeContract(
-        {
-          address: CONTRACT_ADDRESS,
-          abi: DEPIN_REGISTRY_ABI,
-          functionName: "submit",
-          args: [dataCID, litCID || dataCID, dataType],
-        },
-        {
-          onSuccess: () => setStep("done"),
-          onError: (err) => {
-            setError(err.message);
-            setStep("form");
-          },
-        },
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
-      setStep("form");
-    }
+    writeContract({
+      address: CONTRACTS.depinRegistry,
+      abi: DEPIN_REGISTRY_ABI,
+      functionName: "submit",
+      args: [
+        encodeMetadataUri({
+          title,
+          summary,
+          region,
+          createdAt: new Date().toISOString(),
+        }),
+        accessUri,
+        dataType,
+      ],
+    });
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-bg-page/80 backdrop-blur z-50 absolute inset-0">
-      <div className="bg-bg-card border border-border rounded-card w-full max-w-lg mx-4 p-6">
+    <div className="fixed inset-0 z-50 bg-bg-page/75 backdrop-blur-sm flex items-center justify-center px-4">
+      <div className="w-full max-w-xl rounded-card border border-border bg-bg-card p-6">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="font-serif text-xl text-text-primary">Submit Data</h2>
-          <button onClick={onClose} className="font-mono text-text-dim hover:text-text-muted text-lg">
-            ×
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-accent-yellow mb-2">Data submission</p>
+            <h3 className="font-serif text-2xl text-text-primary">Register a DePIN contribution</h3>
+          </div>
+          <button onClick={onClose} className="font-mono text-sm text-text-muted hover:text-text-primary">
+            Close
           </button>
         </div>
 
-        {step === "done" ? (
-          <div className="text-center py-8">
-            <p className="font-mono text-accent-green text-sm mb-4">Data submitted!</p>
-            <button
-              onClick={onClose}
-              className="font-mono text-xs bg-accent-green text-bg-page px-4 py-2 rounded"
-            >
-              Close
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="font-mono text-[10px] uppercase tracking-widest text-text-dim block mb-1">
-                Description
-              </label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={3}
-                className="w-full bg-bg-surface border border-border rounded px-3 py-2 font-sans text-sm text-text-primary placeholder:text-text-dim focus:outline-none focus:border-border-hover resize-none"
-                placeholder="Describe your data contribution..."
-              />
-            </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <label className="block">
+            <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim block mb-2">Dataset title</span>
+            <input
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              className="w-full rounded-card border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-yellow"
+            />
+          </label>
 
-            <div>
-              <label className="font-mono text-[10px] uppercase tracking-widest text-text-dim block mb-1">
-                Data File (PDF / CSV / JSON)
-              </label>
+          <label className="block">
+            <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim block mb-2">Summary</span>
+            <textarea
+              value={summary}
+              onChange={(event) => setSummary(event.target.value)}
+              rows={3}
+              className="w-full rounded-card border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-yellow resize-none"
+            />
+          </label>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label className="block">
+              <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim block mb-2">Region</span>
               <input
-                type="file"
-                accept=".pdf,.csv,.json"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                className="w-full bg-bg-surface border border-border rounded px-3 py-2 font-mono text-xs text-text-primary file:mr-3 file:bg-bg-card file:border file:border-border file:text-text-muted file:rounded file:px-2 file:py-0.5 file:font-mono file:text-xs cursor-pointer"
+                value={region}
+                onChange={(event) => setRegion(event.target.value)}
+                className="w-full rounded-card border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-yellow"
               />
-            </div>
-
-            <div>
-              <label className="font-mono text-[10px] uppercase tracking-widest text-text-dim block mb-1">
-                Data Type
-              </label>
+            </label>
+            <label className="block">
+              <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim block mb-2">Data type</span>
               <select
                 value={dataType}
-                onChange={(e) => setDataType(Number(e.target.value) as DataType)}
-                className="w-full bg-bg-surface border border-border rounded px-3 py-2 font-mono text-sm text-text-primary focus:outline-none focus:border-border-hover"
+                onChange={(event) => setDataType(Number(event.target.value) as DataType)}
+                className="w-full rounded-card border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-yellow"
               >
-                {DATA_TYPE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
+                {DATA_TYPES.map((option) => (
+                  <option key={option.label} value={option.value}>
+                    {option.label}
                   </option>
                 ))}
               </select>
-            </div>
+            </label>
+          </div>
 
-            <div>
-              <label className="font-mono text-[10px] uppercase tracking-widest text-text-dim block mb-1">
-                Lit Protocol Condition CID (optional)
-              </label>
-              <input
-                value={litCID}
-                onChange={(e) => setLitCID(e.target.value)}
-                className="w-full bg-bg-surface border border-border rounded px-3 py-2 font-mono text-sm text-text-primary placeholder:text-text-dim focus:outline-none focus:border-border-hover"
-                placeholder="bafy..."
-              />
-            </div>
+          <label className="block">
+            <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim block mb-2">Access URL</span>
+            <input
+              value={accessUri}
+              onChange={(event) => setAccessUri(event.target.value)}
+              className="w-full rounded-card border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-yellow"
+            />
+          </label>
 
-            {error && <p className="font-mono text-xs text-accent-red">{error}</p>}
-
-            <div className="flex gap-3 pt-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-1 font-mono text-xs border border-border text-text-muted hover:border-border-hover px-4 py-2 rounded transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isUploading || isPending}
-                className="flex-1 font-mono text-xs bg-accent-yellow text-bg-page px-4 py-2 rounded font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-accent-yellow/90 transition-colors"
-              >
-                {step === "uploading"
-                  ? "Uploading…"
-                  : step === "submitting"
-                    ? "Submitting…"
-                    : "Submit Data"}
-              </button>
-            </div>
-          </form>
-        )}
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="font-mono text-xs border border-border rounded-full px-4 py-2 text-text-muted hover:text-text-primary"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isPending}
+              className="font-mono text-xs rounded-full px-4 py-2 bg-accent-yellow text-bg-page disabled:opacity-40"
+            >
+              {isPending ? "Submitting" : "Submit dataset"}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
