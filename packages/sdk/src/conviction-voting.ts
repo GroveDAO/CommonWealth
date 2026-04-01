@@ -1,6 +1,6 @@
-import type { PublicClient, WalletClient, Address } from "viem";
+import type { Address, PublicClient, WalletClient } from "viem";
 import { CONVICTION_VOTING_ABI } from "./abis.js";
-import type { IProposal, IVoterState } from "./types.js";
+import type { IProposal } from "./types.js";
 
 export class ConvictionVotingClient {
   private publicClient: PublicClient;
@@ -13,130 +13,93 @@ export class ConvictionVotingClient {
     this.walletClient = walletClient;
   }
 
-  async createProposal(cid: string, amount: bigint, beneficiary: Address): Promise<`0x${string}`> {
+  async createProposal(metadataURI: string, requestedAmount: bigint, beneficiary: Address): Promise<`0x${string}`> {
     if (!this.walletClient) throw new Error("WalletClient required for writes");
     const [account] = await this.walletClient.getAddresses();
     return this.walletClient.writeContract({
       address: this.contractAddress,
       abi: CONVICTION_VOTING_ABI,
       functionName: "createProposal",
-      args: [cid, amount, beneficiary],
+      args: [metadataURI, requestedAmount, beneficiary],
       account,
       chain: this.walletClient.chain,
     });
   }
 
-  async stakeOnProposal(id: bigint, amount: bigint): Promise<`0x${string}`> {
+  async stakeOnProposal(proposalId: bigint, amount: bigint): Promise<`0x${string}`> {
     if (!this.walletClient) throw new Error("WalletClient required for writes");
     const [account] = await this.walletClient.getAddresses();
     return this.walletClient.writeContract({
       address: this.contractAddress,
       abi: CONVICTION_VOTING_ABI,
       functionName: "stakeOnProposal",
-      args: [id, amount],
+      args: [proposalId, amount],
       account,
       chain: this.walletClient.chain,
     });
   }
 
-  async withdrawStake(id: bigint, amount: bigint): Promise<`0x${string}`> {
+  async withdrawStake(proposalId: bigint, amount: bigint): Promise<`0x${string}`> {
     if (!this.walletClient) throw new Error("WalletClient required for writes");
     const [account] = await this.walletClient.getAddresses();
     return this.walletClient.writeContract({
       address: this.contractAddress,
       abi: CONVICTION_VOTING_ABI,
       functionName: "withdrawStake",
-      args: [id, amount],
+      args: [proposalId, amount],
       account,
       chain: this.walletClient.chain,
     });
   }
 
-  async executeProposal(id: bigint): Promise<`0x${string}`> {
+  async executeProposal(proposalId: bigint): Promise<`0x${string}`> {
     if (!this.walletClient) throw new Error("WalletClient required for writes");
     const [account] = await this.walletClient.getAddresses();
     return this.walletClient.writeContract({
       address: this.contractAddress,
       abi: CONVICTION_VOTING_ABI,
       functionName: "executeProposal",
-      args: [id],
+      args: [proposalId],
       account,
       chain: this.walletClient.chain,
     });
   }
 
-  async cancelProposal(id: bigint): Promise<`0x${string}`> {
+  async deposit(value: bigint): Promise<`0x${string}`> {
     if (!this.walletClient) throw new Error("WalletClient required for writes");
     const [account] = await this.walletClient.getAddresses();
     return this.walletClient.writeContract({
       address: this.contractAddress,
       abi: CONVICTION_VOTING_ABI,
-      functionName: "cancelProposal",
-      args: [id],
+      functionName: "deposit",
+      args: [],
+      value,
       account,
       chain: this.walletClient.chain,
     });
   }
 
-  async getCurrentConviction(id: bigint, voter: Address): Promise<bigint> {
-    return this.publicClient.readContract({
-      address: this.contractAddress,
-      abi: CONVICTION_VOTING_ABI,
-      functionName: "getCurrentConviction",
-      args: [id, voter],
-    });
-  }
-
-  async getProposal(id: bigint): Promise<IProposal> {
+  async getProposal(proposalId: bigint): Promise<IProposal> {
     const result = await this.publicClient.readContract({
       address: this.contractAddress,
       abi: CONVICTION_VOTING_ABI,
       functionName: "proposals",
-      args: [id],
+      args: [proposalId],
     });
+
     return {
       id: result[0],
       proposer: result[1],
-      metadataCID: result[2],
+      metadataURI: result[2],
       requestedAmount: result[3],
       beneficiary: result[4],
-      convictionLast: result[5],
-      blockLast: result[6],
-      executed: result[7],
-      cancelled: result[8],
-      createdAt: result[9],
+      conviction: result[5],
+      totalStaked: result[6],
+      lastUpdatedBlock: result[7],
+      executed: result[8],
+      cancelled: result[9],
+      createdAt: result[10],
     };
-  }
-
-  async getTotalConviction(id: bigint): Promise<bigint> {
-    return this.publicClient.readContract({
-      address: this.contractAddress,
-      abi: CONVICTION_VOTING_ABI,
-      functionName: "totalConviction",
-      args: [id],
-    });
-  }
-
-  async getVoterState(id: bigint, voter: Address): Promise<IVoterState> {
-    const result = await this.publicClient.readContract({
-      address: this.contractAddress,
-      abi: CONVICTION_VOTING_ABI,
-      functionName: "voterStates",
-      args: [id, voter],
-    });
-    return {
-      amount: result[0],
-      convictionLast: result[1],
-      blockLast: result[2],
-    };
-  }
-
-  async getFundBalance(): Promise<bigint> {
-    return this.publicClient.readContract({
-      address: this.contractAddress,
-      abi: CONVICTION_VOTING_ABI,
-      functionName: "fundBalance",
-    });
   }
 
   async getProposalCount(): Promise<bigint> {
@@ -144,6 +107,41 @@ export class ConvictionVotingClient {
       address: this.contractAddress,
       abi: CONVICTION_VOTING_ABI,
       functionName: "proposalCount",
+    });
+  }
+
+  async getCurrentConviction(proposalId: bigint): Promise<bigint> {
+    return this.publicClient.readContract({
+      address: this.contractAddress,
+      abi: CONVICTION_VOTING_ABI,
+      functionName: "getCurrentConviction",
+      args: [proposalId],
+    });
+  }
+
+  async getConvictionThreshold(proposalId: bigint): Promise<bigint> {
+    return this.publicClient.readContract({
+      address: this.contractAddress,
+      abi: CONVICTION_VOTING_ABI,
+      functionName: "convictionThreshold",
+      args: [proposalId],
+    });
+  }
+
+  async getStake(proposalId: bigint, voter: Address): Promise<bigint> {
+    return this.publicClient.readContract({
+      address: this.contractAddress,
+      abi: CONVICTION_VOTING_ABI,
+      functionName: "stakes",
+      args: [proposalId, voter],
+    });
+  }
+
+  async getFundBalance(): Promise<bigint> {
+    return this.publicClient.readContract({
+      address: this.contractAddress,
+      abi: CONVICTION_VOTING_ABI,
+      functionName: "fundBalance",
     });
   }
 }

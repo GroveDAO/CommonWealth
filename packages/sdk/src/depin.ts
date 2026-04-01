@@ -1,6 +1,6 @@
-import type { PublicClient, WalletClient, Address } from "viem";
+import type { Address, PublicClient, WalletClient } from "viem";
 import { DEPIN_REGISTRY_ABI } from "./abis.js";
-import type { IDataSubmission, DataType } from "./types.js";
+import type { DataType, IDataSubmission } from "./types.js";
 
 export class DePINClient {
   private publicClient: PublicClient;
@@ -13,45 +13,59 @@ export class DePINClient {
     this.walletClient = walletClient;
   }
 
-  async submit(dataCID: string, litCID: string, type: DataType): Promise<`0x${string}`> {
+  async submit(metadataURI: string, accessURI: string, dataType: DataType): Promise<`0x${string}`> {
     if (!this.walletClient) throw new Error("WalletClient required for writes");
     const [account] = await this.walletClient.getAddresses();
     return this.walletClient.writeContract({
       address: this.contractAddress,
       abi: DEPIN_REGISTRY_ABI,
       functionName: "submit",
-      args: [dataCID, litCID, type],
+      args: [metadataURI, accessURI, dataType],
       account,
       chain: this.walletClient.chain,
     });
   }
 
-  async claim(id: bigint): Promise<`0x${string}`> {
+  async claim(submissionId: bigint): Promise<`0x${string}`> {
     if (!this.walletClient) throw new Error("WalletClient required for writes");
     const [account] = await this.walletClient.getAddresses();
     return this.walletClient.writeContract({
       address: this.contractAddress,
       abi: DEPIN_REGISTRY_ABI,
       functionName: "claim",
-      args: [id],
+      args: [submissionId],
       account,
       chain: this.walletClient.chain,
     });
   }
 
-  async getSubmission(id: bigint): Promise<IDataSubmission> {
+  async verify(submissionId: bigint, quality: bigint): Promise<`0x${string}`> {
+    if (!this.walletClient) throw new Error("WalletClient required for writes");
+    const [account] = await this.walletClient.getAddresses();
+    return this.walletClient.writeContract({
+      address: this.contractAddress,
+      abi: DEPIN_REGISTRY_ABI,
+      functionName: "verify",
+      args: [submissionId, quality],
+      account,
+      chain: this.walletClient.chain,
+    });
+  }
+
+  async getSubmission(submissionId: bigint): Promise<IDataSubmission> {
     const result = await this.publicClient.readContract({
       address: this.contractAddress,
       abi: DEPIN_REGISTRY_ABI,
-      functionName: "subs",
-      args: [id],
+      functionName: "submissions",
+      args: [submissionId],
     });
+
     return {
       id: result[0],
       contributor: result[1],
-      dataCID: result[2],
-      litCID: result[3],
-      dtype: result[4] as DataType,
+      metadataURI: result[2],
+      accessURI: result[3],
+      dataType: result[4] as DataType,
       reward: result[5],
       verified: result[6],
       claimed: result[7],
@@ -60,29 +74,29 @@ export class DePINClient {
     };
   }
 
-  async getContributorTier(address: Address): Promise<string> {
-    return this.publicClient.readContract({
-      address: this.contractAddress,
-      abi: DEPIN_REGISTRY_ABI,
-      functionName: "tier",
-      args: [address],
-    });
-  }
-
-  async getScore(address: Address): Promise<bigint> {
-    return this.publicClient.readContract({
-      address: this.contractAddress,
-      abi: DEPIN_REGISTRY_ABI,
-      functionName: "score",
-      args: [address],
-    });
-  }
-
   async getCount(): Promise<bigint> {
     return this.publicClient.readContract({
       address: this.contractAddress,
       abi: DEPIN_REGISTRY_ABI,
       functionName: "count",
+    });
+  }
+
+  async getScore(account: Address): Promise<bigint> {
+    return this.publicClient.readContract({
+      address: this.contractAddress,
+      abi: DEPIN_REGISTRY_ABI,
+      functionName: "score",
+      args: [account],
+    });
+  }
+
+  async getTier(account: Address): Promise<string> {
+    return this.publicClient.readContract({
+      address: this.contractAddress,
+      abi: DEPIN_REGISTRY_ABI,
+      functionName: "tier",
+      args: [account],
     });
   }
 }

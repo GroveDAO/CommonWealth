@@ -1,4 +1,4 @@
-import type { PublicClient, WalletClient, Address } from "viem";
+import type { Address, PublicClient, WalletClient } from "viem";
 import { IMPACT_ATTESTATION_ABI } from "./abis.js";
 import type { IAttestation } from "./types.js";
 
@@ -13,70 +13,71 @@ export class ImpactAttestationClient {
     this.walletClient = walletClient;
   }
 
-  async submit(proofCID: string, descCID: string, reward: bigint): Promise<`0x${string}`> {
+  async submit(proofURI: string, descriptionURI: string, reward: bigint): Promise<`0x${string}`> {
     if (!this.walletClient) throw new Error("WalletClient required for writes");
     const [account] = await this.walletClient.getAddresses();
     return this.walletClient.writeContract({
       address: this.contractAddress,
       abi: IMPACT_ATTESTATION_ABI,
       functionName: "submit",
-      args: [proofCID, descCID, reward],
+      args: [proofURI, descriptionURI, reward],
       account,
       chain: this.walletClient.chain,
     });
   }
 
-  async confirm(id: bigint): Promise<`0x${string}`> {
+  async confirm(attestationId: bigint): Promise<`0x${string}`> {
     if (!this.walletClient) throw new Error("WalletClient required for writes");
     const [account] = await this.walletClient.getAddresses();
     return this.walletClient.writeContract({
       address: this.contractAddress,
       abi: IMPACT_ATTESTATION_ABI,
       functionName: "confirm",
-      args: [id],
+      args: [attestationId],
       account,
       chain: this.walletClient.chain,
     });
   }
 
-  async reject(id: bigint): Promise<`0x${string}`> {
+  async reject(attestationId: bigint): Promise<`0x${string}`> {
     if (!this.walletClient) throw new Error("WalletClient required for writes");
     const [account] = await this.walletClient.getAddresses();
     return this.walletClient.writeContract({
       address: this.contractAddress,
       abi: IMPACT_ATTESTATION_ABI,
       functionName: "reject",
-      args: [id],
+      args: [attestationId],
       account,
       chain: this.walletClient.chain,
     });
   }
 
-  async claim(id: bigint): Promise<`0x${string}`> {
+  async claim(attestationId: bigint): Promise<`0x${string}`> {
     if (!this.walletClient) throw new Error("WalletClient required for writes");
     const [account] = await this.walletClient.getAddresses();
     return this.walletClient.writeContract({
       address: this.contractAddress,
       abi: IMPACT_ATTESTATION_ABI,
       functionName: "claim",
-      args: [id],
+      args: [attestationId],
       account,
       chain: this.walletClient.chain,
     });
   }
 
-  async getAttestation(id: bigint): Promise<IAttestation> {
+  async getAttestation(attestationId: bigint): Promise<IAttestation> {
     const result = await this.publicClient.readContract({
       address: this.contractAddress,
       abi: IMPACT_ATTESTATION_ABI,
       functionName: "attestations",
-      args: [id],
+      args: [attestationId],
     });
+
     return {
       id: result[0],
       contributor: result[1],
-      proofCID: result[2],
-      descriptionCID: result[3],
+      proofURI: result[2],
+      descriptionURI: result[3],
       requestedReward: result[4],
       confirmations: result[5],
       rejections: result[6],
@@ -86,12 +87,27 @@ export class ImpactAttestationClient {
     };
   }
 
-  async getReputation(address: Address): Promise<bigint> {
+  async getCount(): Promise<bigint> {
     return this.publicClient.readContract({
       address: this.contractAddress,
       abi: IMPACT_ATTESTATION_ABI,
-      functionName: "reputation",
-      args: [address],
+      functionName: "count",
+    });
+  }
+
+  async getApprovalThreshold(): Promise<bigint> {
+    return this.publicClient.readContract({
+      address: this.contractAddress,
+      abi: IMPACT_ATTESTATION_ABI,
+      functionName: "approvalThreshold",
+    });
+  }
+
+  async getReviewWindow(): Promise<bigint> {
+    return this.publicClient.readContract({
+      address: this.contractAddress,
+      abi: IMPACT_ATTESTATION_ABI,
+      functionName: "reviewWindow",
     });
   }
 
@@ -100,6 +116,24 @@ export class ImpactAttestationClient {
       address: this.contractAddress,
       abi: IMPACT_ATTESTATION_ABI,
       functionName: "treasury",
+    });
+  }
+
+  async hasVoted(attestationId: bigint, account: Address): Promise<boolean> {
+    return this.publicClient.readContract({
+      address: this.contractAddress,
+      abi: IMPACT_ATTESTATION_ABI,
+      functionName: "hasVoted",
+      args: [attestationId, account],
+    });
+  }
+
+  async getReputation(account: Address): Promise<bigint> {
+    return this.publicClient.readContract({
+      address: this.contractAddress,
+      abi: IMPACT_ATTESTATION_ABI,
+      functionName: "reputation",
+      args: [account],
     });
   }
 }

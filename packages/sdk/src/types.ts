@@ -15,27 +15,22 @@ export enum DataType {
 export interface IProposal {
   id: bigint;
   proposer: `0x${string}`;
-  metadataCID: string;
+  metadataURI: string;
   requestedAmount: bigint;
   beneficiary: `0x${string}`;
-  convictionLast: bigint;
-  blockLast: bigint;
+  conviction: bigint;
+  totalStaked: bigint;
+  lastUpdatedBlock: bigint;
   executed: boolean;
   cancelled: boolean;
   createdAt: bigint;
 }
 
-export interface IVoterState {
-  amount: bigint;
-  convictionLast: bigint;
-  blockLast: bigint;
-}
-
 export interface IAttestation {
   id: bigint;
   contributor: `0x${string}`;
-  proofCID: string;
-  descriptionCID: string;
+  proofURI: string;
+  descriptionURI: string;
   requestedReward: bigint;
   confirmations: bigint;
   rejections: bigint;
@@ -60,12 +55,24 @@ export interface ICircle {
 export interface IDataSubmission {
   id: bigint;
   contributor: `0x${string}`;
-  dataCID: string;
-  litCID: string;
-  dtype: DataType;
+  metadataURI: string;
+  accessURI: string;
+  dataType: DataType;
   reward: bigint;
   verified: boolean;
   claimed: boolean;
   submittedAt: bigint;
   quality: bigint;
+}
+
+export interface IPrivateProposal {
+  id: bigint;
+  publicProposalId: bigint;
+  proposer: `0x${string}`;
+  metadataURI: string;
+  ballotCount: bigint;
+  latestSupport: bigint;
+  latestOpposition: bigint;
+  latestTallyAt: bigint;
+  createdAt: bigint;
 }
