@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import {
@@ -16,6 +17,7 @@ import { sepolia } from "viem/chains";
 
 const FALLBACK_RPC_URL = "https://ethereum-sepolia-rpc.publicnode.com";
 const MAX_RECORDS = 25;
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 type Address = `0x${string}`;
 
@@ -136,7 +138,19 @@ type Snapshot = {
 };
 
 function loadDeploymentConfig(): DeploymentConfig {
-  const deploymentPath = path.resolve(process.cwd(), "packages/contracts/deployments/sepolia.json");
+  const candidates = [
+    process.env.COMMONWEALTH_DEPLOYMENT_CONFIG,
+    path.resolve(process.cwd(), "packages/contracts/deployments/sepolia.json"),
+    path.resolve(process.cwd(), "../contracts/deployments/sepolia.json"),
+    path.resolve(MODULE_DIR, "../../contracts/deployments/sepolia.json"),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  const deploymentPath = candidates.find((candidate) => existsSync(candidate));
+
+  if (!deploymentPath) {
+    throw new Error(`Deployment config not found. Checked: ${candidates.join(", ")}`);
+  }
+
   return JSON.parse(readFileSync(deploymentPath, "utf8")) as DeploymentConfig;
 }
 
