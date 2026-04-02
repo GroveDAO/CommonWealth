@@ -8,11 +8,11 @@ import { useState } from "react";
 import { WagmiProvider } from "wagmi";
 import { sepolia } from "wagmi/chains";
 import { http } from "wagmi";
-import { RPC_URL } from "@/lib/contracts";
+import { RPC_URL, WALLETCONNECT_ENABLED } from "@/lib/contracts";
 
-const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_ID?.trim() ?? "";
+const walletConnectProjectId = WALLETCONNECT_ENABLED ? process.env.NEXT_PUBLIC_WALLETCONNECT_ID?.trim() ?? "" : "";
 const baseWallets = [safeWallet, injectedWallet];
-const browserWallets = walletConnectProjectId
+const browserWallets = WALLETCONNECT_ENABLED
   ? [...baseWallets, walletConnectWallet, coinbaseWallet]
   : baseWallets;
 const wallets = [

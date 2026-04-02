@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CommonWealth Subgraph Bundle</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #eef5ef;
+        --card: rgba(255, 255, 255, 0.86);
+        --ink: #162017;
+        --muted: #4f5d51;
+        --line: rgba(22, 32, 23, 0.12);
+        --accent: #147d64;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(20, 125, 100, 0.18), transparent 32%),
+          linear-gradient(180deg, #f5f9f6 0%, var(--bg) 100%);
+      }
+      main {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 48px 20px 72px;
+      }
+      .hero, .card {
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: var(--card);
+      }
+      .hero { padding: 32px; margin-bottom: 24px; }
+      .eyebrow {
+        font-size: 12px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin: 0 0 12px;
+      }
+      h1, h2 { font-family: "Iowan Old Style", "Palatino Linotype", serif; }
+      h1 { margin: 0 0 12px; font-size: clamp(2.2rem, 5vw, 4rem); line-height: 1; }
+      h2 { margin: 0 0 14px; font-size: 1.4rem; }
+      p, li { color: var(--muted); line-height: 1.6; }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 16px;
+      }
+      .card { padding: 24px; }
+      code, pre { font-family: "IBM Plex Mono", monospace; }
+      pre {
+        overflow-x: auto;
+        background: rgba(22, 32, 23, 0.05);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 18px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Live Sepolia bundle</p>
+        <h1>CommonWealth Subgraph</h1>
+        <p>This artifact tracks the live Sepolia deployment, indexes public governance, impact attestations, savings circles, and DePIN submissions, and is ready for Graph Studio deployment or external hosting workflows.</p>
+      </section>
+
+      <section class="grid">
+        <article class="card">
+          <h2>Contracts</h2>
+          <ul>
+            <li>ConvictionVoting: 0xCe7b7301b29CC8D00a508a2900dc5D5B900176Af</li>
+            <li>ImpactAttestation: 0x4344e79d2f5d660cbBC8bdDC497B86eD3951d828</li>
+            <li>SavingsCircle: 0x172229A5599683ff52e685A751BF87998FA6c11a</li>
+            <li>DePINRegistry: 0x4127C5192aAf3a33813eF2FC981711659a48A028</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h2>CLI</h2>
+          <pre><code>pnpm --filter @commonwealth/subgraph codegen
+pnpm --filter @commonwealth/subgraph build
+graph deploy ...</code></pre>
+        </article>
+      </section>
+
+      <section class="card" style="margin-top: 24px;">
+        <h2>Compiled Manifest</h2>
+        <pre><code>specVersion: 0.0.5
+schema:
+  file: schema.graphql
+dataSources:
+  - kind: ethereum/contract
+    name: ConvictionVoting
+    network: sepolia
+    source:
+      address: &quot;0xCe7b7301b29CC8D00a508a2900dc5D5B900176Af&quot;
+      abi: ConvictionVoting
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Proposal
+        - Vote
+      abis:
+        - name: ConvictionVoting
+          file: ConvictionVoting/ConvictionVoting.json
+      eventHandlers:
+        - event: ProposalCreated(indexed uint256,indexed address,string,uint256,address)
+          handler: handleProposalCreated
+        - event: StakeChanged(indexed uint256,indexed address,uint256,uint256,uint256)
+          handler: handleStakeChanged
+        - event: ProposalExecuted(indexed uint256,indexed address,uint256)
+          handler: handleProposalExecuted
+        - event: ProposalCancelled(indexed uint256)
+          handler: handleProposalCancelled
+      file: ConvictionVoting/ConvictionVoting.wasm
+  - kind: ethereum/contract
+    name: ImpactAttestation
+    network: sepolia
+    source:
+      address: &quot;0x4344e79d2f5d660cbBC8bdDC497B86eD3951d828&quot;
+      abi: ImpactAttestation
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Attestation
+        - Contributor
+      abis:
+        - name: ImpactAttestation
+          file: ImpactAttestation/ImpactAttestation.json
+      eventHandlers:
+        - event: Submitted(indexed uint256,indexed address,string,uint256)
+          handler: handleAttestationSubmitted
+        - event: Confirmed(indexed uint256,indexed address,uint256)
+          handler: handleConfirmed
+        - event: Rejected(indexed uint256,indexed address,uint256)
+          handler: handleRejected
+        - event: Rewarded(indexed uint256,indexed address,uint256)
+          handler: handleRewarded
+      file: ImpactAttestation/ImpactAttestation.wasm
+  - kind: ethereum/contract
+    name: SavingsCircle
+    network: sepolia
+    source:
+      address: &quot;0x172229A5599683ff52e685A751BF87998FA6c11a&quot;
+      abi: SavingsCircle
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Circle
+      abis:
+        - name: SavingsCircle
+          file: SavingsCircle/SavingsCircle.json
+      eventHandlers:
+        - event: Created(indexed uint256,address,string)
+          handler: handleCircleCreated
+        - event: Joined(indexed uint256,address)
+          handler: handleMemberJoined
+        - event: Started(indexed uint256)
+          handler: handleCircleStarted
+        - event: Contributed(indexed uint256,address,uint256)
+          handler: handleContributed
+        - event: Payout(indexed uint256,address,uint256,uint256)
+          handler: handlePayout
+        - event: CircleCompleted(indexed uint256)
+          handler: handleCircleCompleted
+      file: SavingsCircle/SavingsCircle.wasm
+  - kind: ethereum/contract
+    name: DePINRegistry
+    network: sepolia
+    source:
+      address: &quot;0x4127C5192aAf3a33813eF2FC981711659a48A028&quot;
+      abi: DePINRegistry
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - DataSubmission
+      abis:
+        - name: DePINRegistry
+          file: DePINRegistry/DePINRegistry.json
+      eventHandlers:
+        - event: Submitted(indexed uint256,indexed address,uint8)
+          handler: handleDataSubmitted
+        - event: Verified(indexed uint256,uint256,uint256)
+          handler: handleDataVerified
+        - event: Claimed(indexed uint256,indexed address,uint256)
+          handler: handleDataClaimed
+      file: DePINRegistry/DePINRegistry.wasm
+</code></pre>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,8 +1,7 @@
 # CommonWealth
 
-CommonWealth is a production-grade collective coordination protocol running on Sepolia. The stack combines live treasury governance, Zama-backed private voting, Storacha-backed evidence and dataset persistence, Lit-protected access control for DePIN assets, a deployable API, a typed SDK, and an indexable subgraph aligned to the live contracts.
+CommonWealth is a collective coordination protocol running on Ethereum. The stack combines live treasury governance, Zama-backed private voting, Storacha-backed evidence and dataset persistence, Lit-protected access control for DePIN assets, a deployable API, a typed SDK, and an indexable subgraph aligned to the live contracts.
 
-This repository is structured as a pnpm and Turbo monorepo and is intended to ship as a full hackathon submission rather than a demo. The frontend talks to deployed contracts, the API reads live onchain state, and the reference surfaces for the SDK and subgraph are deployable as static sites.
 
 ## Track Alignment
 
