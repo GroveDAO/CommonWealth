@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { SAVINGS_CIRCLE_ABI } from "@commonwealth/sdk";
 import { parseEther } from "viem";
-import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
-import { CONTRACTS } from "@/lib/contracts";
+import { SurfaceBanner } from "@/components/shared/SurfaceFeedback";
+import { useContractAction } from "@/hooks/useContractAction";
+import { CONTRACTS, contractsAreConfigured } from "@/lib/contracts";
 import { useRefreshProtocolData } from "@/hooks/useProtocolData";
 
 interface CreateCircleModalProps {
@@ -19,29 +20,60 @@ const CYCLE_OPTIONS = [
 
 export function CreateCircleModal({ onClose }: CreateCircleModalProps) {
   const refreshProtocolData = useRefreshProtocolData();
-  const { data: hash, isPending, writeContract } = useWriteContract();
-  const { isSuccess } = useWaitForTransactionReceipt({ hash });
+  const createCircle = useContractAction(async () => {
+    await refreshProtocolData();
+    onClose();
+  });
 
   const [name, setName] = useState("");
   const [contribution, setContribution] = useState("");
   const [cycleDuration, setCycleDuration] = useState(CYCLE_OPTIONS[0].seconds.toString());
   const [maxMembers, setMaxMembers] = useState("3");
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isSuccess) {
-      void refreshProtocolData();
-      onClose();
-    }
-  }, [isSuccess, onClose, refreshProtocolData]);
-
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    writeContract({
+    if (!contractsAreConfigured()) {
+      setError("This action is temporarily unavailable. Retry in a moment.");
+      return;
+    }
+
+    const normalizedName = name.trim();
+    const parsedMembers = Number(maxMembers);
+    const parsedDuration = BigInt(cycleDuration);
+
+    if (!normalizedName || normalizedName.length < 3) {
+      setError("Circle name must contain at least 3 characters.");
+      return;
+    }
+
+    if (!Number.isFinite(parsedMembers) || parsedMembers < 2 || parsedMembers > 20) {
+      setError("Member count must stay between 2 and 20.");
+      return;
+    }
+
+    let parsedContribution: bigint;
+
+    try {
+      parsedContribution = parseEther(contribution);
+    } catch {
+      setError("Contribution must be a valid positive CWT amount.");
+      return;
+    }
+
+    if (parsedContribution <= 0n) {
+      setError("Contribution must be greater than 0.");
+      return;
+    }
+
+    setError(null);
+
+    await createCircle.execute({
       address: CONTRACTS.savingsCircle,
       abi: SAVINGS_CIRCLE_ABI,
       functionName: "create",
-      args: [name, parseEther(contribution), BigInt(cycleDuration), BigInt(maxMembers), CONTRACTS.token],
+      args: [normalizedName, parsedContribution, parsedDuration, BigInt(parsedMembers), CONTRACTS.token],
     });
   }
 
@@ -114,6 +146,10 @@ export function CreateCircleModal({ onClose }: CreateCircleModalProps) {
             <p className="font-mono text-sm text-text-primary">CommonWealth Token (CWT)</p>
           </div>
 
+          {error || createCircle.error ? (
+            <SurfaceBanner tone="error" title="Circle creation failed" detail={error ?? createCircle.error ?? ""} />
+          ) : null}
+
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
               type="button"
@@ -124,10 +160,10 @@ export function CreateCircleModal({ onClose }: CreateCircleModalProps) {
             </button>
             <button
               type="submit"
-              disabled={isPending}
+              disabled={createCircle.isPending}
               className="font-mono text-xs rounded-full px-4 py-2 bg-accent-purple text-bg-page disabled:opacity-40"
             >
-              {isPending ? "Creating" : "Create circle"}
+              {createCircle.isPending ? "Creating" : "Create circle"}
             </button>
           </div>
         </form>

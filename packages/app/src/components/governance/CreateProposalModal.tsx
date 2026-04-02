@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { CONVICTION_VOTING_ABI } from "@commonwealth/sdk";
 import { isAddress, parseEther } from "viem";
-import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
-import { CONTRACTS } from "@/lib/contracts";
+import { useAccount } from "wagmi";
+import { SurfaceBanner } from "@/components/shared/SurfaceFeedback";
+import { useContractAction } from "@/hooks/useContractAction";
+import { CONTRACTS, ZERO_ADDRESS, contractsAreConfigured } from "@/lib/contracts";
 import { encodeMetadataUri } from "@/lib/metadata";
 import { useRefreshProtocolData } from "@/hooks/useProtocolData";
 
@@ -15,8 +17,10 @@ interface CreateProposalModalProps {
 export function CreateProposalModal({ onClose }: CreateProposalModalProps) {
   const { address } = useAccount();
   const refreshProtocolData = useRefreshProtocolData();
-  const { data: hash, isPending, writeContract } = useWriteContract();
-  const { isSuccess } = useWaitForTransactionReceipt({ hash });
+  const createProposal = useContractAction(async () => {
+    await refreshProtocolData();
+    onClose();
+  });
 
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
@@ -24,46 +28,56 @@ export function CreateProposalModal({ onClose }: CreateProposalModalProps) {
   const [beneficiary, setBeneficiary] = useState(address ?? "");
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isSuccess) {
-      void refreshProtocolData();
-      onClose();
-    }
-  }, [isSuccess, onClose, refreshProtocolData]);
-
-  useEffect(() => {
-    if (address) {
-      setBeneficiary(address);
-    }
-  }, [address]);
-
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
 
-    if (!title || !summary || !requestedAmount || !beneficiary) {
+    if (!contractsAreConfigured()) {
+      setError("This action is temporarily unavailable. Retry in a moment.");
+      return;
+    }
+
+    const normalizedTitle = title.trim();
+    const normalizedSummary = summary.trim();
+    const normalizedBeneficiary = beneficiary.trim();
+
+    if (!normalizedTitle || normalizedTitle.length < 4 || !normalizedSummary || normalizedSummary.length < 12 || !requestedAmount || !normalizedBeneficiary) {
       setError("Every field is required.");
       return;
     }
 
-    if (!isAddress(beneficiary)) {
+    if (!isAddress(normalizedBeneficiary) || normalizedBeneficiary.toLowerCase() === ZERO_ADDRESS.toLowerCase()) {
       setError("Beneficiary address is invalid.");
       return;
     }
 
-    writeContract({
+    let parsedRequestedAmount: bigint;
+
+    try {
+      parsedRequestedAmount = parseEther(requestedAmount);
+    } catch {
+      setError("Requested ETH must be a valid positive amount.");
+      return;
+    }
+
+    if (parsedRequestedAmount <= 0n) {
+      setError("Requested ETH must be greater than 0.");
+      return;
+    }
+
+    await createProposal.execute({
       address: CONTRACTS.convictionVoting,
       abi: CONVICTION_VOTING_ABI,
       functionName: "createProposal",
       args: [
         encodeMetadataUri({
-          title,
-          summary,
+          title: normalizedTitle,
+          summary: normalizedSummary,
           createdAt: new Date().toISOString(),
           lane: "public-governance",
         }),
-        parseEther(requestedAmount),
-        beneficiary,
+        parsedRequestedAmount,
+        normalizedBeneficiary,
       ],
     });
   }
@@ -124,7 +138,9 @@ export function CreateProposalModal({ onClose }: CreateProposalModalProps) {
             </label>
           </div>
 
-          {error && <p className="font-mono text-xs text-accent-red">{error}</p>}
+          {error || createProposal.error ? (
+            <SurfaceBanner tone="error" title="Proposal submission failed" detail={error ?? createProposal.error ?? ""} />
+          ) : null}
 
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
@@ -136,10 +152,10 @@ export function CreateProposalModal({ onClose }: CreateProposalModalProps) {
             </button>
             <button
               type="submit"
-              disabled={isPending}
+              disabled={createProposal.isPending}
               className="font-mono text-xs rounded-full px-4 py-2 bg-accent-green text-bg-page disabled:opacity-40"
             >
-              {isPending ? "Submitting" : "Submit proposal"}
+              {createProposal.isPending ? "Submitting" : "Submit proposal"}
             </button>
           </div>
         </form>

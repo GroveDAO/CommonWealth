@@ -1,44 +1,121 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { IMPACT_ATTESTATION_ABI } from "@commonwealth/sdk";
 import { parseEther } from "viem";
-import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
-import { CONTRACTS } from "@/lib/contracts";
+import { useAccount } from "wagmi";
+import { EmptySurface, SurfaceBanner } from "@/components/shared/SurfaceFeedback";
+import { useContractAction } from "@/hooks/useContractAction";
+import { CONTRACTS, STORACHA_EMAIL, contractsAreConfigured } from "@/lib/contracts";
+import { getErrorMessage } from "@/lib/errors";
 import { formatEth, formatRelativeTime, truncateAddress } from "@/lib/format";
 import { encodeMetadataUri } from "@/lib/metadata";
 import { useProtocolData, useRefreshProtocolData } from "@/hooks/useProtocolData";
+import { hasStorachaUploadSupport, uploadFileToStoracha } from "@/lib/storacha";
 
 function SubmitAttestationCard() {
   const refreshProtocolData = useRefreshProtocolData();
-  const { data: hash, isPending, writeContract } = useWriteContract();
-  const { isSuccess } = useWaitForTransactionReceipt({ hash });
+  const submitAttestation = useContractAction(async () => {
+    await refreshProtocolData();
+    setTitle("");
+    setSummary("");
+    setEvidence("");
+    setReward("");
+    setEvidenceFile(null);
+    setStorachaAsset(null);
+    setUploadStatus(null);
+  });
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [evidence, setEvidence] = useState("");
   const [reward, setReward] = useState("");
+  const [storachaEmail, setStorachaEmail] = useState(STORACHA_EMAIL);
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const [storachaAsset, setStorachaAsset] = useState<{ cid: string; gatewayUrl: string } | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isSuccess) {
-      setTitle("");
-      setSummary("");
-      setEvidence("");
-      setReward("");
-      void refreshProtocolData();
+  async function handleUploadEvidence() {
+    if (!evidenceFile) {
+      setError("Choose a supporting file before uploading.");
+      return;
     }
-  }, [isSuccess, refreshProtocolData]);
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    if (!hasStorachaUploadSupport(storachaEmail)) {
+      setError("Provide a storage account email to start uploads.");
+      return;
+    }
+
+    try {
+      setError(null);
+      setUploadStatus("Uploading evidence");
+      const asset = await uploadFileToStoracha(evidenceFile, storachaEmail);
+      setStorachaAsset(asset);
+      setUploadStatus(`Evidence uploaded as ${asset.cid}`);
+    } catch (nextError) {
+      setError(getErrorMessage(nextError, "Unable to upload the evidence file."));
+      setUploadStatus(null);
+    }
+  }
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    writeContract({
+    if (!contractsAreConfigured()) {
+      setError("This action is temporarily unavailable. Retry in a moment.");
+      return;
+    }
+
+    const normalizedTitle = title.trim();
+    const normalizedSummary = summary.trim();
+    const normalizedEvidence = evidence.trim();
+
+    if (!normalizedTitle || normalizedTitle.length < 4 || !normalizedSummary || normalizedSummary.length < 12) {
+      setError("Add a descriptive title and summary before submitting an attestation.");
+      return;
+    }
+
+    if (!normalizedEvidence && !storachaAsset) {
+      setError("Provide evidence notes or upload a supporting file before submitting.");
+      return;
+    }
+
+    let parsedReward: bigint;
+
+    try {
+      parsedReward = parseEther(reward);
+    } catch {
+      setError("Requested reward must be a valid positive ETH amount.");
+      return;
+    }
+
+    if (parsedReward <= 0n) {
+      setError("Requested reward must be greater than 0.");
+      return;
+    }
+
+    setError(null);
+
+    await submitAttestation.execute({
       address: CONTRACTS.impactAttestation,
       abi: IMPACT_ATTESTATION_ABI,
       functionName: "submit",
       args: [
-        encodeMetadataUri({ title, evidence, createdAt: new Date().toISOString() }),
-        encodeMetadataUri({ title, summary, createdAt: new Date().toISOString() }),
-        parseEther(reward),
+        encodeMetadataUri({
+          title: normalizedTitle,
+          evidence: normalizedEvidence || "Supporting evidence uploaded.",
+          evidenceUrl: storachaAsset?.gatewayUrl,
+          storageProvider: storachaAsset ? "storacha" : "inline",
+          storachaCid: storachaAsset?.cid,
+          createdAt: new Date().toISOString(),
+        }),
+        encodeMetadataUri({
+          title: normalizedTitle,
+          summary: normalizedSummary,
+          impactArea: "public-goods",
+          createdAt: new Date().toISOString(),
+        }),
+        parsedReward,
       ],
     });
   }
@@ -47,7 +124,7 @@ function SubmitAttestationCard() {
     <form onSubmit={handleSubmit} className="bg-bg-card border border-border rounded-card p-5 space-y-4">
       <div>
         <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-accent-cyan mb-2">Submit work</p>
-        <h3 className="font-serif text-2xl text-text-primary">Create a retroactive funding request</h3>
+        <h3 className="font-serif text-2xl text-text-primary">Request a reward for completed work</h3>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -92,12 +169,68 @@ function SubmitAttestationCard() {
         />
       </label>
 
+      <div className="rounded-card border border-border bg-bg-surface p-4 space-y-4">
+        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim mb-1">Evidence archive</p>
+            <p className="text-sm text-text-muted">Upload receipts, reports, or media and attach a durable proof link to this reward request.</p>
+          </div>
+          {uploadStatus ? <span className="font-mono text-xs text-accent-cyan">{uploadStatus}</span> : null}
+        </div>
+
+        {!STORACHA_EMAIL ? (
+          <label className="block">
+            <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim block mb-2">Storage account email</span>
+            <input
+              value={storachaEmail}
+              onChange={(event) => setStorachaEmail(event.target.value)}
+              placeholder="builder@example.com"
+              className="w-full rounded-card border border-border bg-bg-card px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-cyan"
+            />
+          </label>
+        ) : null}
+
+        <label className="block">
+          <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim block mb-2">Supporting file</span>
+          <input
+            type="file"
+            onChange={(event) => setEvidenceFile(event.target.files?.[0] ?? null)}
+            className="w-full rounded-card border border-border bg-bg-card px-3 py-2 text-sm text-text-primary"
+          />
+        </label>
+
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => void handleUploadEvidence()}
+            disabled={!evidenceFile}
+            className="font-mono text-xs rounded-full px-4 py-2 border border-accent-cyan/40 text-accent-cyan bg-accent-cyan/10 disabled:opacity-40"
+          >
+            Upload file
+          </button>
+          {storachaAsset ? (
+            <a
+              href={storachaAsset.gatewayUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="font-mono text-xs rounded-full px-4 py-2 border border-border text-text-primary"
+            >
+              Open uploaded file
+            </a>
+          ) : null}
+        </div>
+      </div>
+
+      {error || submitAttestation.error ? (
+        <SurfaceBanner tone="error" title="Attestation submission failed" detail={error ?? submitAttestation.error ?? ""} />
+      ) : null}
+
       <button
         type="submit"
-        disabled={isPending}
+        disabled={submitAttestation.isPending}
         className="font-mono text-xs rounded-full px-4 py-2 bg-accent-cyan text-bg-page disabled:opacity-40"
       >
-        {isPending ? "Submitting" : "Submit for attestation"}
+        {submitAttestation.isPending ? "Submitting" : "Submit for attestation"}
       </button>
     </form>
   );
@@ -107,25 +240,27 @@ export function AttestationFeed() {
   const { address } = useAccount();
   const { data } = useProtocolData();
   const refreshProtocolData = useRefreshProtocolData();
-  const { data: hash, isPending, writeContract } = useWriteContract();
-  const { isSuccess } = useWaitForTransactionReceipt({ hash });
-
-  useEffect(() => {
-    if (isSuccess) {
-      void refreshProtocolData();
-    }
-  }, [isSuccess, refreshProtocolData]);
+  const reviewAction = useContractAction(refreshProtocolData);
 
   return (
     <section id="impact" className="space-y-6">
+      {reviewAction.error ? <SurfaceBanner tone="error" title="Review action failed" detail={reviewAction.error} /> : null}
+
       <div>
-        <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-accent-cyan mb-2">Impact funding</p>
-        <h2 className="font-serif text-3xl text-text-primary">Attest work, confirm outcomes, claim rewards</h2>
+        <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-accent-cyan mb-2">Impact rewards</p>
+        <h2 className="font-serif text-3xl text-text-primary">Show what shipped, collect review, and unlock rewards</h2>
       </div>
 
       <SubmitAttestationCard />
 
       <div className="space-y-4">
+        {data && data.attestations.length === 0 ? (
+          <EmptySurface
+            title="No attestations submitted yet"
+            detail="Reward requests will appear here as soon as contributors submit completed work for review."
+          />
+        ) : null}
+
         {data?.attestations.map((attestation) => (
           <article key={attestation.id.toString()} className="bg-bg-card border border-border rounded-card p-5 space-y-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -142,7 +277,7 @@ export function AttestationFeed() {
                   {attestation.description?.title?.toString() ?? "Impact attestation"}
                 </h3>
                 <p className="text-sm text-text-muted mt-2">
-                  {attestation.description?.summary?.toString() ?? "Onchain description metadata available."}
+                  {attestation.description?.summary?.toString() ?? "Review details are attached to this reward request."}
                 </p>
               </div>
               <div className="text-left lg:text-right">
@@ -163,7 +298,19 @@ export function AttestationFeed() {
               </div>
               <div className="rounded-card border border-border bg-bg-surface px-4 py-3">
                 <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-text-dim mb-1">Evidence</p>
-                <p className="font-mono text-xs text-text-primary">{attestation.proof?.evidence?.toString() ?? "Encoded metadata attached"}</p>
+                <div className="space-y-2">
+                  <p className="font-mono text-xs text-text-primary">{attestation.proof?.evidence?.toString() ?? "Encoded metadata attached"}</p>
+                  {attestation.proof?.evidenceUrl ? (
+                    <a
+                      href={attestation.proof.evidenceUrl.toString()}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-mono text-xs text-accent-cyan"
+                    >
+                      Open supporting evidence
+                    </a>
+                  ) : null}
+                </div>
               </div>
             </div>
 
@@ -172,28 +319,28 @@ export function AttestationFeed() {
                 <>
                   <button
                     onClick={() =>
-                      writeContract({
+                      void reviewAction.execute({
                         address: CONTRACTS.impactAttestation,
                         abi: IMPACT_ATTESTATION_ABI,
                         functionName: "confirm",
                         args: [attestation.id],
                       })
                     }
-                    disabled={isPending}
+                    disabled={!contractsAreConfigured() || reviewAction.isPending}
                     className="font-mono text-xs rounded-full px-4 py-2 border border-accent-cyan/40 text-accent-cyan bg-accent-cyan/10 disabled:opacity-40"
                   >
                     Confirm
                   </button>
                   <button
                     onClick={() =>
-                      writeContract({
+                      void reviewAction.execute({
                         address: CONTRACTS.impactAttestation,
                         abi: IMPACT_ATTESTATION_ABI,
                         functionName: "reject",
                         args: [attestation.id],
                       })
                     }
-                    disabled={isPending}
+                    disabled={!contractsAreConfigured() || reviewAction.isPending}
                     className="font-mono text-xs rounded-full px-4 py-2 border border-accent-red/40 text-accent-red bg-accent-red/10 disabled:opacity-40"
                   >
                     Reject
@@ -204,14 +351,14 @@ export function AttestationFeed() {
               {attestation.status === "Confirmed" && address?.toLowerCase() === attestation.contributor.toLowerCase() && (
                 <button
                   onClick={() =>
-                    writeContract({
+                    void reviewAction.execute({
                       address: CONTRACTS.impactAttestation,
                       abi: IMPACT_ATTESTATION_ABI,
                       functionName: "claim",
                       args: [attestation.id],
                     })
                   }
-                  disabled={isPending}
+                  disabled={!contractsAreConfigured() || reviewAction.isPending}
                   className="font-mono text-xs rounded-full px-4 py-2 bg-accent-green text-bg-page disabled:opacity-40"
                 >
                   Claim reward

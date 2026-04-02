@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: commonwealth-api
+    env: node
+    plan: free
+    rootDir: .
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @commonwealth/api build
+    startCommand: pnpm --filter @commonwealth/api start
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: COMMONWEALTH_SEPOLIA_RPC_URL
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+
+  - type: web
+    runtime: static
+    name: commonwealth-sdk-reference
+    rootDir: .
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @commonwealth/sdk build && pnpm --filter @commonwealth/sdk docs:build
+    staticPublishPath: packages/sdk/docs-dist
+
+  - type: web
+    runtime: static
+    name: commonwealth-subgraph-reference
+    rootDir: .
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @commonwealth/subgraph codegen && pnpm --filter @commonwealth/subgraph build && pnpm --filter @commonwealth/subgraph export:site
+    staticPublishPath: packages/subgraph/site

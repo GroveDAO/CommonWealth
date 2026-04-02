@@ -10,7 +10,7 @@ export const metadata: Metadata = {
     template: "%s | CommonWealth",
   },
   description:
-    "Confidential onchain coordination for treasury, attestations, savings circles, DePIN rewards, and private conviction voting.",
+    "A collective action workspace for funding decisions, private votes, contributor rewards, shared savings, and operational data.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

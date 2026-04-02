@@ -14,6 +14,7 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts --clean",
     "dev": "tsup src/index.ts --format esm,cjs --dts --watch",
+    "docs:build": "node ./scripts/build-docs.mjs",
     "test": "vitest run",
     "clean": "rm -rf dist"
   },

@@ -51,15 +51,17 @@ export function useFhevm() {
         const { createInstance, SepoliaConfig } = await import("@zama-fhe/relayer-sdk/web");
         const nextInstance = await createInstance({
           ...SepoliaConfig,
-          network: RPC_URL || window.ethereum,
+          network: window.ethereum ?? RPC_URL,
         });
 
         if (mounted) {
           setInstance(nextInstance as unknown as FhevmInstance);
+          setError(null);
         }
       } catch (err) {
         if (mounted) {
-          setError(err instanceof Error ? err.message : "Unable to initialize FHE instance");
+          void err;
+          setError("Private voting is temporarily unavailable.");
         }
       }
     }

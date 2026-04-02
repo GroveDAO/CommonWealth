@@ -11,8 +11,11 @@
   },
   "dependencies": {
     "@commonwealth/sdk": "workspace:*",
+    "@lit-protocol/encryption": "^7.4.0",
+    "@lit-protocol/lit-node-client": "^7.4.0",
     "@rainbow-me/rainbowkit": "2.2.10",
     "@tanstack/react-query": "^5.28.0",
+    "@walletconnect/modal": "^2.4.3",
     "@zama-fhe/relayer-sdk": "0.4.1",
     "ethers": "^6.16.0",
     "next": "^15.5.12",

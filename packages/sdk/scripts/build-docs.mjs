@@ -1,0 +1,144 @@
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
+
+const rootDir = path.resolve(new URL("..", import.meta.url).pathname);
+const packageJson = JSON.parse(readFileSync(path.join(rootDir, "package.json"), "utf8"));
+const sourceFiles = readdirSync(path.join(rootDir, "src"))
+  .filter((file) => file.endsWith(".ts") && file !== "index.ts")
+  .sort();
+
+const outputDir = path.join(rootDir, "docs-dist");
+mkdirSync(outputDir, { recursive: true });
+
+const html = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CommonWealth SDK</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f5efe2;
+        --card: rgba(255, 252, 246, 0.82);
+        --ink: #1e1a17;
+        --muted: #5e554c;
+        --line: rgba(30, 26, 23, 0.14);
+        --accent: #0b9e8a;
+        --accent-2: #f97316;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(11, 158, 138, 0.18), transparent 36%),
+          radial-gradient(circle at bottom right, rgba(249, 115, 22, 0.18), transparent 30%),
+          var(--bg);
+      }
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 48px 20px 72px;
+      }
+      .hero, .card {
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: var(--card);
+        backdrop-filter: blur(16px);
+      }
+      .hero {
+        padding: 32px;
+        margin-bottom: 24px;
+      }
+      .eyebrow {
+        font-size: 12px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin: 0 0 12px;
+      }
+      h1, h2 { font-family: "Iowan Old Style", "Palatino Linotype", serif; }
+      h1 {
+        margin: 0 0 12px;
+        font-size: clamp(2.2rem, 5vw, 4rem);
+        line-height: 1;
+      }
+      h2 {
+        margin: 0 0 16px;
+        font-size: 1.6rem;
+      }
+      p, li {
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 16px;
+      }
+      .card {
+        padding: 24px;
+      }
+      code, pre {
+        font-family: "IBM Plex Mono", monospace;
+      }
+      pre {
+        overflow-x: auto;
+        background: rgba(30, 26, 23, 0.05);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 18px;
+      }
+      ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">${packageJson.name} v${packageJson.version}</p>
+        <h1>CommonWealth SDK</h1>
+        <p>Typed contract clients, ABI exports, and storage helpers for the CommonWealth treasury stack. The SDK is designed to support live Sepolia governance flows, Zama private voting integrations, Storacha upload tooling, and DePIN reward automation.</p>
+      </section>
+
+      <section class="grid">
+        <article class="card">
+          <h2>Install</h2>
+          <pre><code>pnpm add @commonwealth/sdk viem wagmi</code></pre>
+        </article>
+        <article class="card">
+          <h2>Primary Exports</h2>
+          <ul>
+            <li>ABI constants for all deployed contracts</li>
+            <li>Typed clients for governance, impact, savings, and DePIN</li>
+            <li>Storage integration via w3up-compatible clients</li>
+            <li>Enum exports for circle state and data type routing</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="card" style="margin-top: 24px;">
+        <h2>Usage</h2>
+        <pre><code>import { ConvictionVotingClient } from "@commonwealth/sdk";
+
+const client = new ConvictionVotingClient({
+  address: "0xCe7b7301b29CC8D00a508a2900dc5D5B900176Af",
+  chainId: 11155111,
+});</code></pre>
+      </section>
+
+      <section class="card" style="margin-top: 24px;">
+        <h2>Source Modules</h2>
+        <ul>
+          ${sourceFiles.map((file) => `<li>${file}</li>`).join("")}
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>`;
+
+writeFileSync(path.join(outputDir, "index.html"), html);

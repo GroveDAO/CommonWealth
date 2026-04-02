@@ -5,10 +5,10 @@ import {
   COMMONWEALTH_TOKEN_ABI,
   CONVICTION_VOTING_ABI,
   DEPIN_REGISTRY_ABI,
+  DataType,
   IMPACT_ATTESTATION_ABI,
   PRIVATE_CONVICTION_VOTING_ABI,
   SAVINGS_CIRCLE_ABI,
-  type DataType,
   type IAttestation,
   type ICircle,
   type IDataSubmission,
@@ -17,7 +17,7 @@ import {
 } from "@commonwealth/sdk";
 import type { Address } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
-import { CONTRACTS, contractsAreConfigured } from "@/lib/contracts";
+import { CONFIG_ERRORS, CONFIG_WARNINGS, CONTRACTS, ZERO_ADDRESS, contractsAreConfigured } from "@/lib/contracts";
 import { decodeMetadataUri } from "@/lib/metadata";
 
 type ProposalTuple = readonly [bigint, Address, string, bigint, Address, bigint, bigint, bigint, boolean, boolean, bigint];
@@ -25,6 +25,124 @@ type AttestationTuple = readonly [bigint, Address, string, string, bigint, bigin
 type CircleTuple = readonly [bigint, Address, string, bigint, bigint, bigint, Address, number, bigint, bigint];
 type SubmissionTuple = readonly [bigint, Address, string, string, DataType, bigint, boolean, boolean, bigint, bigint];
 type PrivateProposalTuple = readonly [bigint, bigint, Address, string, bigint, bigint, bigint, bigint, bigint];
+
+interface ProtocolSnapshot {
+  proposals: Array<
+    IProposal & {
+      currentConviction: bigint;
+      threshold: bigint;
+      myStake: bigint;
+      metadata: ReturnType<typeof decodeMetadataUri>;
+    }
+  >;
+  attestations: Array<
+    IAttestation & {
+      status: string;
+      description: ReturnType<typeof decodeMetadataUri>;
+      proof: ReturnType<typeof decodeMetadataUri>;
+      hasVoted: boolean;
+    }
+  >;
+  circles: Array<
+    ICircle & {
+      memberCount: bigint;
+      currentRecipient: Address;
+    }
+  >;
+  submissions: Array<
+    IDataSubmission & {
+      metadata: ReturnType<typeof decodeMetadataUri>;
+    }
+  >;
+  privateProposals: Array<
+    IPrivateProposal & {
+      metadata: ReturnType<typeof decodeMetadataUri>;
+      hasVoted: boolean;
+    }
+  >;
+  balances: {
+    convictionTreasury: bigint;
+    impactTreasury: bigint;
+    depinRewardPool: bigint;
+    savingsEscrow: bigint;
+    distributedRewards: bigint;
+  };
+  wallet: {
+    tokenBalance: bigint;
+    convictionAllowance: bigint;
+    savingsAllowance: bigint;
+    lastClaimAt: bigint;
+    faucetAmount: bigint;
+    faucetCooldown: bigint;
+  } | null;
+  status: {
+    configurationErrors: string[];
+    warnings: string[];
+    loadedAt: number;
+    truncated: boolean;
+  };
+}
+
+function buildEmptySnapshot(status?: Partial<ProtocolSnapshot["status"]>): ProtocolSnapshot {
+  return {
+    proposals: [],
+    attestations: [],
+    circles: [],
+    submissions: [],
+    privateProposals: [],
+    balances: {
+      convictionTreasury: 0n,
+      impactTreasury: 0n,
+      depinRewardPool: 0n,
+      savingsEscrow: 0n,
+      distributedRewards: 0n,
+    },
+    wallet: null,
+    status: {
+      configurationErrors: [...CONFIG_ERRORS],
+      warnings: [...CONFIG_WARNINGS],
+      loadedAt: 0,
+      truncated: false,
+      ...status,
+    },
+  };
+}
+
+function buildEntityIds(total: bigint, label: string, warnings: string[], limit = 25): bigint[] {
+  const cappedTotal = total > BigInt(limit) ? BigInt(limit) : total;
+
+  if (total > BigInt(limit)) {
+    warnings.push(`${label} were truncated to the most recent ${limit} records.`);
+  }
+
+  if (cappedTotal === 0n) {
+    return [];
+  }
+
+  const start = total - cappedTotal + 1n;
+
+  return Array.from({ length: Number(cappedTotal) }, (_, index) => start + BigInt(index)).reverse();
+}
+
+async function safeReadContract<T>(
+  publicClient: NonNullable<ReturnType<typeof usePublicClient>>,
+  config: {
+    address: Address;
+    abi: readonly unknown[];
+    functionName: string;
+    args?: readonly unknown[];
+  },
+  fallback: T,
+  warning: string,
+  warnings: string[],
+): Promise<T> {
+  try {
+    return await readContract<T>(publicClient, config);
+  } catch {
+    warnings.push(warning);
+    return fallback;
+  }
+}
 
 async function readContract<T>(
   publicClient: NonNullable<ReturnType<typeof usePublicClient>>,
@@ -49,12 +167,25 @@ export function useProtocolData() {
 
   return useQuery({
     queryKey: ["protocolSnapshot", address],
-    enabled: Boolean(publicClient) && contractsAreConfigured(),
+    enabled: Boolean(publicClient),
+    initialData: buildEmptySnapshot(),
+    placeholderData: (previousData) => previousData,
     refetchInterval: 15_000,
+    retry: 1,
     queryFn: async () => {
       if (!publicClient) {
         throw new Error("Public client unavailable");
       }
+
+      if (!contractsAreConfigured()) {
+        return buildEmptySnapshot({
+          configurationErrors: [...CONFIG_ERRORS],
+          warnings: [...CONFIG_WARNINGS],
+          loadedAt: Date.now(),
+        });
+      }
+
+      const warnings: string[] = [];
 
       const [
         proposalCount,
@@ -69,105 +200,214 @@ export function useProtocolData() {
         faucetAmount,
         faucetCooldown,
       ] = await Promise.all([
-        readContract<bigint>(publicClient, {
+        safeReadContract<bigint>(
+          publicClient,
+          {
           address: CONTRACTS.convictionVoting,
           abi: CONVICTION_VOTING_ABI,
           functionName: "proposalCount",
-        }),
-        readContract<bigint>(publicClient, {
+          },
+          0n,
+          "Unable to load treasury proposal count.",
+          warnings,
+        ),
+        safeReadContract<bigint>(
+          publicClient,
+          {
           address: CONTRACTS.impactAttestation,
           abi: IMPACT_ATTESTATION_ABI,
           functionName: "count",
-        }),
-        readContract<bigint>(publicClient, {
+          },
+          0n,
+          "Unable to load attestation count.",
+          warnings,
+        ),
+        safeReadContract<bigint>(
+          publicClient,
+          {
           address: CONTRACTS.savingsCircle,
           abi: SAVINGS_CIRCLE_ABI,
           functionName: "count",
-        }),
-        readContract<bigint>(publicClient, {
+          },
+          0n,
+          "Unable to load savings circle count.",
+          warnings,
+        ),
+        safeReadContract<bigint>(
+          publicClient,
+          {
           address: CONTRACTS.depinRegistry,
           abi: DEPIN_REGISTRY_ABI,
           functionName: "count",
-        }),
-        readContract<bigint>(publicClient, {
+          },
+          0n,
+          "Unable to load DePIN submission count.",
+          warnings,
+        ),
+        safeReadContract<bigint>(
+          publicClient,
+          {
           address: CONTRACTS.privateConvictionVoting,
           abi: PRIVATE_CONVICTION_VOTING_ABI,
           functionName: "proposalCount",
-        }),
-        readContract<bigint>(publicClient, {
+          },
+          0n,
+          "Unable to load encrypted proposal count.",
+          warnings,
+        ),
+        safeReadContract<bigint>(
+          publicClient,
+          {
           address: CONTRACTS.convictionVoting,
           abi: CONVICTION_VOTING_ABI,
           functionName: "fundBalance",
-        }),
-        readContract<bigint>(publicClient, {
+          },
+          0n,
+          "Unable to load treasury balance.",
+          warnings,
+        ),
+        safeReadContract<bigint>(
+          publicClient,
+          {
           address: CONTRACTS.impactAttestation,
           abi: IMPACT_ATTESTATION_ABI,
           functionName: "treasury",
-        }),
-        readContract<bigint>(publicClient, {
+          },
+          0n,
+          "Unable to load impact treasury balance.",
+          warnings,
+        ),
+        safeReadContract<bigint>(
+          publicClient,
+          {
           address: CONTRACTS.token,
           abi: COMMONWEALTH_TOKEN_ABI,
           functionName: "balanceOf",
           args: [CONTRACTS.depinRegistry],
-        }),
-        readContract<bigint>(publicClient, {
+          },
+          0n,
+          "Unable to load DePIN reward pool balance.",
+          warnings,
+        ),
+        safeReadContract<bigint>(
+          publicClient,
+          {
           address: CONTRACTS.token,
           abi: COMMONWEALTH_TOKEN_ABI,
           functionName: "balanceOf",
           args: [CONTRACTS.savingsCircle],
-        }),
-        readContract<bigint>(publicClient, {
+          },
+          0n,
+          "Unable to load savings escrow balance.",
+          warnings,
+        ),
+        safeReadContract<bigint>(
+          publicClient,
+          {
           address: CONTRACTS.token,
           abi: COMMONWEALTH_TOKEN_ABI,
           functionName: "faucetAmount",
-        }),
-        readContract<bigint>(publicClient, {
+          },
+          0n,
+          "Unable to load faucet amount.",
+          warnings,
+        ),
+        safeReadContract<bigint>(
+          publicClient,
+          {
           address: CONTRACTS.token,
           abi: COMMONWEALTH_TOKEN_ABI,
           functionName: "faucetCooldown",
-        }),
+          },
+          0n,
+          "Unable to load faucet cooldown.",
+          warnings,
+        ),
       ]);
 
-      const approvalThreshold = await readContract<bigint>(publicClient, {
-        address: CONTRACTS.impactAttestation,
-        abi: IMPACT_ATTESTATION_ABI,
-        functionName: "approvalThreshold",
-      });
-      const reviewWindow = await readContract<bigint>(publicClient, {
-        address: CONTRACTS.impactAttestation,
-        abi: IMPACT_ATTESTATION_ABI,
-        functionName: "reviewWindow",
-      });
+      const [approvalThreshold, reviewWindow] = await Promise.all([
+        safeReadContract<bigint>(
+          publicClient,
+          {
+            address: CONTRACTS.impactAttestation,
+            abi: IMPACT_ATTESTATION_ABI,
+            functionName: "approvalThreshold",
+          },
+          0n,
+          "Unable to load attestation approval threshold.",
+          warnings,
+        ),
+        safeReadContract<bigint>(
+          publicClient,
+          {
+            address: CONTRACTS.impactAttestation,
+            abi: IMPACT_ATTESTATION_ABI,
+            functionName: "reviewWindow",
+          },
+          0n,
+          "Unable to load attestation review window.",
+          warnings,
+        ),
+      ]);
+
+      const proposalIds = buildEntityIds(proposalCount, "Treasury proposals", warnings);
+      const attestationIds = buildEntityIds(attestationCount, "Impact attestations", warnings);
+      const circleIds = buildEntityIds(circleCount, "Savings circles", warnings);
+      const submissionIds = buildEntityIds(submissionCount, "DePIN submissions", warnings);
+      const privateProposalIds = buildEntityIds(privateProposalCount, "Private voting proposals", warnings);
 
       const proposals = await Promise.all(
-        Array.from({ length: Number(proposalCount) }, async (_, index) => {
-          const proposalId = BigInt(index + 1);
-          const proposal = await readContract<ProposalTuple>(publicClient, {
-            address: CONTRACTS.convictionVoting,
-            abi: CONVICTION_VOTING_ABI,
-            functionName: "proposals",
-            args: [proposalId],
-          });
+        proposalIds.map(async (proposalId) => {
+          const proposal = await safeReadContract<ProposalTuple>(
+            publicClient,
+            {
+              address: CONTRACTS.convictionVoting,
+              abi: CONVICTION_VOTING_ABI,
+              functionName: "proposals",
+              args: [proposalId],
+            },
+            [proposalId, ZERO_ADDRESS, "", 0n, ZERO_ADDRESS, 0n, 0n, 0n, false, false, 0n],
+            `Unable to load treasury proposal ${proposalId.toString()}.`,
+            warnings,
+          );
           const [currentConviction, threshold, myStake] = await Promise.all([
-            readContract<bigint>(publicClient, {
-              address: CONTRACTS.convictionVoting,
-              abi: CONVICTION_VOTING_ABI,
-              functionName: "getCurrentConviction",
-              args: [proposalId],
-            }),
-            readContract<bigint>(publicClient, {
-              address: CONTRACTS.convictionVoting,
-              abi: CONVICTION_VOTING_ABI,
-              functionName: "convictionThreshold",
-              args: [proposalId],
-            }),
+            safeReadContract<bigint>(
+              publicClient,
+              {
+                address: CONTRACTS.convictionVoting,
+                abi: CONVICTION_VOTING_ABI,
+                functionName: "getCurrentConviction",
+                args: [proposalId],
+              },
+              proposal[5],
+              `Unable to calculate conviction for proposal ${proposalId.toString()}.`,
+              warnings,
+            ),
+            safeReadContract<bigint>(
+              publicClient,
+              {
+                address: CONTRACTS.convictionVoting,
+                abi: CONVICTION_VOTING_ABI,
+                functionName: "convictionThreshold",
+                args: [proposalId],
+              },
+              0n,
+              `Unable to calculate threshold for proposal ${proposalId.toString()}.`,
+              warnings,
+            ),
             address
-              ? readContract<bigint>(publicClient, {
-                  address: CONTRACTS.convictionVoting,
-                  abi: CONVICTION_VOTING_ABI,
-                  functionName: "stakes",
-                  args: [proposalId, address],
-                })
+              ? safeReadContract<bigint>(
+                  publicClient,
+                  {
+                    address: CONTRACTS.convictionVoting,
+                    abi: CONVICTION_VOTING_ABI,
+                    functionName: "stakes",
+                    args: [proposalId, address],
+                  },
+                  0n,
+                  `Unable to load connected stake for proposal ${proposalId.toString()}.`,
+                  warnings,
+                )
               : Promise.resolve(0n),
           ]);
 
@@ -196,14 +436,19 @@ export function useProtocolData() {
       );
 
       const attestations = await Promise.all(
-        Array.from({ length: Number(attestationCount) }, async (_, index) => {
-          const attestationId = BigInt(index + 1);
-          const attestation = await readContract<AttestationTuple>(publicClient, {
-            address: CONTRACTS.impactAttestation,
-            abi: IMPACT_ATTESTATION_ABI,
-            functionName: "attestations",
-            args: [attestationId],
-          });
+        attestationIds.map(async (attestationId) => {
+          const attestation = await safeReadContract<AttestationTuple>(
+            publicClient,
+            {
+              address: CONTRACTS.impactAttestation,
+              abi: IMPACT_ATTESTATION_ABI,
+              functionName: "attestations",
+              args: [attestationId],
+            },
+            [attestationId, ZERO_ADDRESS, "", "", 0n, 0n, 0n, false, false, 0n],
+            `Unable to load attestation ${attestationId.toString()}.`,
+            warnings,
+          );
 
           const base: IAttestation = {
             id: attestation[0],
@@ -235,39 +480,62 @@ export function useProtocolData() {
             description: decodeMetadataUri(base.descriptionURI),
             proof: decodeMetadataUri(base.proofURI),
             hasVoted: address
-              ? await readContract<boolean>(publicClient, {
-                  address: CONTRACTS.impactAttestation,
-                  abi: IMPACT_ATTESTATION_ABI,
-                  functionName: "hasVoted",
-                  args: [attestationId, address],
-                })
+              ? await safeReadContract<boolean>(
+                  publicClient,
+                  {
+                    address: CONTRACTS.impactAttestation,
+                    abi: IMPACT_ATTESTATION_ABI,
+                    functionName: "hasVoted",
+                    args: [attestationId, address],
+                  },
+                  false,
+                  `Unable to load connected review status for attestation ${attestationId.toString()}.`,
+                  warnings,
+                )
               : false,
           };
         }),
       );
 
       const circles = await Promise.all(
-        Array.from({ length: Number(circleCount) }, async (_, index) => {
-          const circleId = BigInt(index + 1);
-          const circle = await readContract<CircleTuple>(publicClient, {
-            address: CONTRACTS.savingsCircle,
-            abi: SAVINGS_CIRCLE_ABI,
-            functionName: "circles",
-            args: [circleId],
-          });
+        circleIds.map(async (circleId) => {
+          const circle = await safeReadContract<CircleTuple>(
+            publicClient,
+            {
+              address: CONTRACTS.savingsCircle,
+              abi: SAVINGS_CIRCLE_ABI,
+              functionName: "circles",
+              args: [circleId],
+            },
+            [circleId, ZERO_ADDRESS, "", 0n, 0n, 0n, ZERO_ADDRESS, 0, 0n, 0n],
+            `Unable to load savings circle ${circleId.toString()}.`,
+            warnings,
+          );
           const [memberCount, recipient] = await Promise.all([
-            readContract<bigint>(publicClient, {
-              address: CONTRACTS.savingsCircle,
-              abi: SAVINGS_CIRCLE_ABI,
-              functionName: "memberCount",
-              args: [circleId],
-            }),
-            readContract<Address>(publicClient, {
-              address: CONTRACTS.savingsCircle,
-              abi: SAVINGS_CIRCLE_ABI,
-              functionName: "currentRecipient",
-              args: [circleId],
-            }),
+            safeReadContract<bigint>(
+              publicClient,
+              {
+                address: CONTRACTS.savingsCircle,
+                abi: SAVINGS_CIRCLE_ABI,
+                functionName: "memberCount",
+                args: [circleId],
+              },
+              0n,
+              `Unable to load member count for circle ${circleId.toString()}.`,
+              warnings,
+            ),
+            safeReadContract<Address>(
+              publicClient,
+              {
+                address: CONTRACTS.savingsCircle,
+                abi: SAVINGS_CIRCLE_ABI,
+                functionName: "currentRecipient",
+                args: [circleId],
+              },
+              ZERO_ADDRESS,
+              `Unable to load current recipient for circle ${circleId.toString()}.`,
+              warnings,
+            ),
           ]);
 
           const base: ICircle = {
@@ -292,14 +560,19 @@ export function useProtocolData() {
       );
 
       const submissions = await Promise.all(
-        Array.from({ length: Number(submissionCount) }, async (_, index) => {
-          const submissionId = BigInt(index + 1);
-          const submission = await readContract<SubmissionTuple>(publicClient, {
-            address: CONTRACTS.depinRegistry,
-            abi: DEPIN_REGISTRY_ABI,
-            functionName: "submissions",
-            args: [submissionId],
-          });
+        submissionIds.map(async (submissionId) => {
+          const submission = await safeReadContract<SubmissionTuple>(
+            publicClient,
+            {
+              address: CONTRACTS.depinRegistry,
+              abi: DEPIN_REGISTRY_ABI,
+              functionName: "submissions",
+              args: [submissionId],
+            },
+            [submissionId, ZERO_ADDRESS, "", "", DataType.Environmental, 0n, false, false, 0n, 0n],
+            `Unable to load DePIN submission ${submissionId.toString()}.`,
+            warnings,
+          );
 
           const base: IDataSubmission = {
             id: submission[0],
@@ -322,14 +595,19 @@ export function useProtocolData() {
       );
 
       const privateProposals = await Promise.all(
-        Array.from({ length: Number(privateProposalCount) }, async (_, index) => {
-          const proposalId = BigInt(index + 1);
-          const proposal = await readContract<PrivateProposalTuple>(publicClient, {
-            address: CONTRACTS.privateConvictionVoting,
-            abi: PRIVATE_CONVICTION_VOTING_ABI,
-            functionName: "proposals",
-            args: [proposalId],
-          });
+        privateProposalIds.map(async (proposalId) => {
+          const proposal = await safeReadContract<PrivateProposalTuple>(
+            publicClient,
+            {
+              address: CONTRACTS.privateConvictionVoting,
+              abi: PRIVATE_CONVICTION_VOTING_ABI,
+              functionName: "proposals",
+              args: [proposalId],
+            },
+            [proposalId, 0n, ZERO_ADDRESS, "", 0n, 0n, 0n, 0n, 0n],
+            `Unable to load private proposal ${proposalId.toString()}.`,
+            warnings,
+          );
 
           const base: IPrivateProposal = {
             id: proposal[0],
@@ -347,12 +625,18 @@ export function useProtocolData() {
             ...base,
             metadata: decodeMetadataUri(base.metadataURI),
             hasVoted: address
-              ? await readContract<boolean>(publicClient, {
-                  address: CONTRACTS.privateConvictionVoting,
-                  abi: PRIVATE_CONVICTION_VOTING_ABI,
-                  functionName: "hasVoted",
-                  args: [proposalId, address],
-                })
+              ? await safeReadContract<boolean>(
+                  publicClient,
+                  {
+                    address: CONTRACTS.privateConvictionVoting,
+                    abi: PRIVATE_CONVICTION_VOTING_ABI,
+                    functionName: "hasVoted",
+                    args: [proposalId, address],
+                  },
+                  false,
+                  `Unable to load connected ballot status for private proposal ${proposalId.toString()}.`,
+                  warnings,
+                )
               : false,
           };
         }),
@@ -360,30 +644,54 @@ export function useProtocolData() {
 
       const connectedWallet = address
         ? await Promise.all([
-            readContract<bigint>(publicClient, {
-              address: CONTRACTS.token,
-              abi: COMMONWEALTH_TOKEN_ABI,
-              functionName: "balanceOf",
-              args: [address],
-            }),
-            readContract<bigint>(publicClient, {
-              address: CONTRACTS.token,
-              abi: COMMONWEALTH_TOKEN_ABI,
-              functionName: "allowance",
-              args: [address, CONTRACTS.convictionVoting],
-            }),
-            readContract<bigint>(publicClient, {
-              address: CONTRACTS.token,
-              abi: COMMONWEALTH_TOKEN_ABI,
-              functionName: "allowance",
-              args: [address, CONTRACTS.savingsCircle],
-            }),
-            readContract<bigint>(publicClient, {
-              address: CONTRACTS.token,
-              abi: COMMONWEALTH_TOKEN_ABI,
-              functionName: "lastClaimAt",
-              args: [address],
-            }),
+            safeReadContract<bigint>(
+              publicClient,
+              {
+                address: CONTRACTS.token,
+                abi: COMMONWEALTH_TOKEN_ABI,
+                functionName: "balanceOf",
+                args: [address],
+              },
+              0n,
+              "Unable to load connected wallet token balance.",
+              warnings,
+            ),
+            safeReadContract<bigint>(
+              publicClient,
+              {
+                address: CONTRACTS.token,
+                abi: COMMONWEALTH_TOKEN_ABI,
+                functionName: "allowance",
+                args: [address, CONTRACTS.convictionVoting],
+              },
+              0n,
+              "Unable to load governance allowance.",
+              warnings,
+            ),
+            safeReadContract<bigint>(
+              publicClient,
+              {
+                address: CONTRACTS.token,
+                abi: COMMONWEALTH_TOKEN_ABI,
+                functionName: "allowance",
+                args: [address, CONTRACTS.savingsCircle],
+              },
+              0n,
+              "Unable to load savings allowance.",
+              warnings,
+            ),
+            safeReadContract<bigint>(
+              publicClient,
+              {
+                address: CONTRACTS.token,
+                abi: COMMONWEALTH_TOKEN_ABI,
+                functionName: "lastClaimAt",
+                args: [address],
+              },
+              0n,
+              "Unable to load faucet claim history.",
+              warnings,
+            ),
           ])
         : null;
 
@@ -414,6 +722,12 @@ export function useProtocolData() {
               faucetCooldown,
             }
           : null,
+        status: {
+          configurationErrors: [...CONFIG_ERRORS],
+          warnings: Array.from(new Set([...CONFIG_WARNINGS, ...warnings])),
+          loadedAt: Date.now(),
+          truncated: warnings.some((warning) => warning.includes("truncated")),
+        },
       };
     },
   });

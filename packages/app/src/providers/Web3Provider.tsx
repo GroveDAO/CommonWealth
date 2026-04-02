@@ -24,13 +24,13 @@ const wallets = [
 
 const config = getDefaultConfig({
   appName: "CommonWealth",
-  appDescription: "Confidential onchain coordination for treasury, attestations, savings circles, and DePIN rewards.",
+  appDescription: "A collective action workspace for funding decisions, contributor rewards, shared savings, and private voting.",
   projectId: walletConnectProjectId,
   chains: [sepolia],
   wallets,
   ssr: true,
   transports: {
-    [sepolia.id]: http(RPC_URL),
+    [sepolia.id]: http(RPC_URL || sepolia.rpcUrls.default.http[0]),
   },
 });
 

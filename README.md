@@ -1,17 +1,41 @@
 # CommonWealth
 
-CommonWealth is a platform for programmable collective action. It combines:
+CommonWealth is a production-grade collective coordination protocol running on Sepolia. The stack combines live treasury governance, Zama-backed private voting, Storacha-backed evidence and dataset persistence, Lit-protected access control for DePIN assets, a deployable API, a typed SDK, and an indexable subgraph aligned to the live contracts.
 
-- Public conviction voting for treasury allocation
-- Zama-powered private conviction voting over encrypted ballots
-- Impact attestations with treasury-backed rewards
-- Rotating savings circles
-- DePIN data submissions with token rewards
-- A Next.js web app wired directly to the deployed contracts
+This repository is structured as a pnpm and Turbo monorepo and is intended to ship as a full hackathon submission rather than a demo. The frontend talks to deployed contracts, the API reads live onchain state, and the reference surfaces for the SDK and subgraph are deployable as static sites.
 
-## What Is Live
+## Track Alignment
 
-The current deployment is already live on Sepolia and verified on Etherscan.
+### Crypto track
+
+- Live Sepolia treasury governance with conviction voting
+- Impact attestations tied to treasury-backed rewards
+- Savings circles with rotating recipients and contribution enforcement
+- DePIN registry with reward distribution in `CWT`
+- Production API exposing protocol metrics and live snapshots
+
+### Zama track
+
+- `PrivateConvictionVoting` is deployed on Sepolia
+- Ballot direction and voting weight are encrypted before submission
+- The frontend supports encrypted voting and tally publication workflows
+- The app retains live-contract behavior while surfacing operational fallbacks when FHE tooling or RPC calls degrade
+
+### Storacha track
+
+- Impact evidence can be pushed to Storacha before its reference is committed onchain
+- DePIN submissions can upload datasets to Storacha and persist the resulting CID in protocol metadata
+- Stored evidence is portable across the frontend, API, and subgraph metadata paths
+
+### Lit Protocol track
+
+- DePIN dataset access can be wrapped in Lit-managed encrypted payloads
+- Access is token-gated against `CWT` balances
+- The decrypt flow is wallet-authorized in the frontend rather than exposed as a public link
+
+## Live Deployment
+
+The protocol is already deployed on Sepolia. Deployment metadata lives in `packages/contracts/deployments/sepolia.json`.
 
 | Contract | Address | Explorer |
 | --- | --- | --- |
@@ -22,183 +46,111 @@ The current deployment is already live on Sepolia and verified on Etherscan.
 | `DePINRegistry` | `0x4127C5192aAf3a33813eF2FC981711659a48A028` | https://sepolia.etherscan.io/address/0x4127C5192aAf3a33813eF2FC981711659a48A028#code |
 | `PrivateConvictionVoting` | `0xA1D135E125e1C1B5713478266E18d85d66273a48` | https://sepolia.etherscan.io/address/0xA1D135E125e1C1B5713478266E18d85d66273a48#code |
 
-The deployment metadata and seeded IDs are recorded in `packages/contracts/deployments/sepolia.json`.
+Current seeded state includes live public proposals, private proposals, impact attestations, savings circles, and DePIN submissions suitable for judge walkthroughs and API verification.
 
-## Live Seed State
+## Product Surfaces
 
-The current seeded Sepolia state includes:
+### Frontend
 
-- `3` public treasury proposals
-- `3` private FHE voting proposals
-- `2` impact attestation requests
-- `2` savings circles
-- `3` DePIN submissions
+The Next.js app in `packages/app` exposes the protocol through focused routes instead of a single landing-page demo.
 
-Deterministic actor wallets used for seeded activity:
+| Route | Purpose |
+| --- | --- |
+| `/` | Protocol overview and route hub |
+| `/dashboard` | Treasury balances, counts, and protocol summary |
+| `/governance` | Public conviction voting and proposal execution |
+| `/private-voting` | Zama-backed private voting |
+| `/impact` | Evidence submission, attestation review, and reward claims |
+| `/savings` | Circle creation, membership, and contributions |
+| `/depin` | Dataset submission, verification, claim flows, and protected access |
 
-- `Ade`: `0xf8eaBEED4FDD3f5E2670c3A4993198168B954393`
-- `Bira`: `0xa7561FaeC008A184652E7122ef615EE279DbBE0B`
-- `Chima`: `0xEBb441e85f0dD5ff2B532F3d9509FbCa2FF2289F`
+The app is built with `Next.js 15`, `React 18`, `wagmi`, `viem`, `RainbowKit`, `@tanstack/react-query`, `@lit-protocol/*`, and `@zama-fhe/relayer-sdk`.
 
-## Monorepo Structure
+### API
+
+The Fastify API in `packages/api` reads live Sepolia state and is intended for Render deployment.
+
+Endpoints:
+
+- `GET /health`
+- `GET /v1/config`
+- `GET /v1/tracks`
+- `GET /v1/protocol/metrics`
+- `GET /v1/protocol/snapshot?limit=10`
+
+The API falls back to `https://ethereum-sepolia-rpc.publicnode.com` when no dedicated RPC URL is configured, and it returns warning arrays when individual contract reads fail instead of hard-crashing the whole snapshot.
+
+### SDK
+
+The TypeScript SDK in `packages/sdk` exposes:
+
+- typed ABIs
+- contract client wrappers
+- shared protocol types
+- buildable static reference docs via `docs:build`
+
+### Subgraph
+
+The subgraph in `packages/subgraph` is aligned to the current Sepolia deployment and current contract events. It supports code generation, builds cleanly against the rewritten manifest and mappings, and can export a static reference site for deployment.
+
+## Repository Layout
 
 ```text
 commonwealth/
 ├── packages/
-│   ├── app/         # Next.js 15 web application
-│   ├── contracts/   # Hardhat + Solidity contracts and deployment scripts
-│   ├── sdk/         # TypeScript SDK and contract ABIs
-│   └── subgraph/    # Existing subgraph workspace
-├── package.json     # Turbo workspace orchestration
-└── README.md
+│   ├── api/        # Fastify live protocol API
+│   ├── app/        # Next.js 15 frontend
+│   ├── contracts/  # Solidity, Hardhat, deploy, verify, seed
+│   ├── sdk/        # Typed SDK + static docs export
+│   └── subgraph/   # The Graph manifest, mappings, static site export
+├── render.yaml     # Render blueprint for API + static sites
+├── turbo.json
+└── package.json
 ```
 
-## Core Features
+## Local Development
 
-### 1. Treasury Governance
-
-`ConvictionVoting` supports:
-
-- Proposal creation with onchain data-URI metadata
-- Token staking against proposals
-- Time-weighted conviction accumulation
-- Treasury execution when thresholds are met
-
-### 2. Private Conviction Voting
-
-`PrivateConvictionVoting` adds:
-
-- Zama FHE encrypted ballot weights
-- Encrypted support or opposition direction
-- Public tally publication with proof-backed decryptions
-- User-side ballot decryption support in the web app
-
-### 3. Impact Attestations
-
-`ImpactAttestation` supports:
-
-- Evidence-backed work submissions
-- Configurable review thresholds
-- Treasury-funded reward claims
-- Explicit attester management
-
-### 4. Savings Circles
-
-`SavingsCircle` supports:
-
-- Circle creation and membership
-- Fixed contribution schedules
-- Rotating recipients
-- Onchain state for current cycle and recipient
-
-### 5. DePIN Marketplace
-
-`DePINRegistry` supports:
-
-- Metadata-backed dataset submissions
-- Oracle verification
-- Quality-scored rewards
-- Reward claims in `CWT`
-
-## Web App Structure
-
-The web app is now organized as separate pages instead of a single long landing page.
-
-| Route | Purpose |
-| --- | --- |
-| `/` | Overview and route hub |
-| `/dashboard` | Live treasury and protocol-wide balance dashboard |
-| `/governance` | Public treasury proposals and conviction staking |
-| `/private-voting` | Zama-powered private conviction voting |
-| `/impact` | Impact attestations and reward review |
-| `/savings` | Savings circles and contribution flows |
-| `/depin` | DePIN submissions and claims |
-
-The app uses:
-
-- `Next.js 15`
-- `React 18`
-- `wagmi`
-- `viem`
-- `RainbowKit v2`
-- `@tanstack/react-query`
-- `@zama-fhe/relayer-sdk`
-
-## Branding
-
-The web app includes a custom SVG brand mark and favicon:
-
-- `packages/app/src/app/icon.svg`
-- `packages/app/src/components/layout/IconMark.tsx`
-
-The header now uses the logo instead of the old `CW` badge.
-
-## Contracts Package
-
-The contracts workspace uses Hardhat.
-
-### Scripts
+Install dependencies:
 
 ```bash
-pnpm --filter @commonwealth/contracts run build
-pnpm --filter @commonwealth/contracts run test
-pnpm --filter @commonwealth/contracts run deploy
-pnpm --filter @commonwealth/contracts run verify
-pnpm --filter @commonwealth/contracts run seed
-pnpm --filter @commonwealth/contracts run deploy:all
+pnpm install
 ```
 
-### Main Contracts
-
-- `packages/contracts/src/CommonWealthToken.sol`
-- `packages/contracts/src/ConvictionVoting.sol`
-- `packages/contracts/src/PrivateConvictionVoting.sol`
-- `packages/contracts/src/ImpactAttestation.sol`
-- `packages/contracts/src/SavingsCircle.sol`
-- `packages/contracts/src/DePINRegistry.sol`
-
-### Deployment Scripts
-
-- `packages/contracts/scripts/deploy.js`
-- `packages/contracts/scripts/verify.js`
-- `packages/contracts/scripts/seed.js`
-- `packages/contracts/scripts/deploy-and-seed.js`
-
-## SDK Package
-
-The SDK exposes:
-
-- Typed ABIs
-- Client wrappers for each live contract
-- Shared protocol types
-- Support for the private voting contract and token contract
-
-Build it with:
+Run the frontend:
 
 ```bash
-pnpm --filter @commonwealth/sdk run build
+pnpm --filter @commonwealth/app dev
 ```
 
-## Environment Setup
-
-Copy the example files and fill in your own values if you want to redeploy or run against another environment.
+Run the API locally:
 
 ```bash
-cp packages/contracts/.env.example packages/contracts/.env
-cp packages/app/.env.example packages/app/.env
+pnpm --filter @commonwealth/api dev
 ```
 
-### `packages/contracts/.env`
+Build the workspace:
 
-Required variables:
+```bash
+pnpm build
+```
 
-- `PRIVATE_KEY`
-- `SEPOLIA_RPC_URL`
-- `ETHERSCAN_API_KEY`
+Targeted builds:
 
-### `packages/app/.env`
+```bash
+pnpm --filter @commonwealth/app build
+pnpm --filter @commonwealth/api build
+pnpm --filter @commonwealth/sdk build
+pnpm --filter @commonwealth/subgraph codegen
+pnpm --filter @commonwealth/subgraph build
+```
 
-Required variables:
+## Environment Variables
+
+### Frontend
+
+Copy `packages/app/.env.example` to `packages/app/.env.local` or `packages/app/.env`.
+
+Required values:
 
 - `NEXT_PUBLIC_WALLETCONNECT_ID`
 - `NEXT_PUBLIC_SEPOLIA_RPC_URL`
@@ -209,87 +161,94 @@ Required variables:
 - `NEXT_PUBLIC_DEPIN_REGISTRY_ADDRESS`
 - `NEXT_PUBLIC_PRIVATE_CONVICTION_VOTING_ADDRESS`
 
-## Local Development
+Optional values:
 
-Install dependencies:
+- `NEXT_PUBLIC_STORACHA_EMAIL`
+
+### API
+
+Copy `packages/api/.env.example` to `packages/api/.env`.
+
+Supported values:
+
+- `PORT`
+- `COMMONWEALTH_SEPOLIA_RPC_URL`
+- `CORS_ORIGIN`
+
+### Contracts
+
+For fresh deployments or reseeding, configure the contracts workspace with:
+
+- `PRIVATE_KEY`
+- `SEPOLIA_RPC_URL`
+- `ETHERSCAN_API_KEY`
+
+## Production Readiness Notes
+
+- The frontend validates contract configuration at runtime instead of assuming local demo defaults.
+- Shared error normalization and action handling are used across governance, impact, savings, and DePIN flows.
+- Protocol reads degrade with warnings and safe fallbacks when an RPC or index surface is partial.
+- Metadata is treated as live onchain data URIs or protocol storage references, not hardcoded fixtures.
+- The app tree no longer carries simulation components or placeholder-only routes.
+
+## Deployments
+
+### Render blueprint
+
+`render.yaml` defines three deployable services:
+
+- `commonwealth-api` as a Node web service
+- `commonwealth-sdk-reference` as a static site
+- `commonwealth-subgraph-reference` as a static site
+
+Validate the blueprint locally:
 
 ```bash
-pnpm install
+render blueprints validate
 ```
 
-Run the web app:
+The current Render CLI can validate blueprints and manage existing services, but blueprint creation itself still depends on Render project setup. Once the services exist in Render, the CLI can be used to trigger subsequent deploys.
+
+Expected service build commands are already encoded in `render.yaml`.
+
+### Vercel frontend
+
+The frontend is configured for monorepo deployment through `packages/app/vercel.json`.
+
+Typical production deployment flow:
 
 ```bash
-pnpm --filter @commonwealth/app run dev
+cd packages/app
+vercel deploy --prod --yes
 ```
 
-Build the whole workspace:
+The config installs dependencies from the repository root and runs `pnpm --filter @commonwealth/app build`.
+
+## Contract Operations
+
+Useful commands:
 
 ```bash
-pnpm build
-```
-
-Build only the app:
-
-```bash
-pnpm --filter @commonwealth/app run build
-```
-
-Start the production app build:
-
-```bash
-pnpm --filter @commonwealth/app run start
-```
-
-## Deploying Fresh Contracts
-
-To deploy a fresh Sepolia stack with your own credentials:
-
-```bash
+pnpm --filter @commonwealth/contracts run build
+pnpm --filter @commonwealth/contracts run test
 pnpm --filter @commonwealth/contracts run deploy
 pnpm --filter @commonwealth/contracts run verify
 pnpm --filter @commonwealth/contracts run seed
-```
-
-Or run the combined flow:
-
-```bash
 pnpm --filter @commonwealth/contracts run deploy:all
 ```
 
-After deployment:
+After any fresh deployment, update the frontend environment and any downstream consumers from `packages/contracts/deployments/sepolia.json`.
 
-1. Copy the new addresses from `packages/contracts/deployments/sepolia.json`
-2. Update `packages/app/.env`
-3. Rebuild or restart the app
+## Verification
 
-## Zama / FHE Notes
+Key checks completed during the hardening pass:
 
-Private conviction voting is implemented with Zama FHE tooling.
-
-Current setup:
-
-- Solidity FHE support via `@fhevm/solidity`
-- Hardhat integration via `@fhevm/hardhat-plugin`
-- Relayer client usage via `@zama-fhe/relayer-sdk`
-- Private ballot flow exposed in the web app under `/private-voting`
-
-The current implementation is designed for Sepolia and uses proof-backed encrypted inputs and public tally publishing.
-
-## Verification Status
-
-The following local checks have been run successfully against the current codebase:
-
-- `pnpm --filter @commonwealth/contracts run build`
-- `pnpm --filter @commonwealth/contracts run test`
-- `pnpm --filter @commonwealth/sdk run build`
-- `pnpm --filter @commonwealth/app run build`
-
-## Notes
-
-- The web app is wired to real live Sepolia contracts, not placeholders.
-- Seed values were tuned for realistic Sepolia testnet balances.
-- The app build currently succeeds with a couple of non-blocking Next.js chunk warnings during bundling.
+- frontend runtime and transaction flow hardening
+- subgraph manifest and mappings rewritten to match live contracts
+- subgraph build passing
+- API build passing
+- SDK docs export packaging completed
+- subgraph static export packaging completed
 
 ## License
 

@@ -6,7 +6,7 @@ dataSources:
     name: ConvictionVoting
     network: sepolia
     source:
-      address: "0x0000000000000000000000000000000000000000"
+      address: "0xCe7b7301b29CC8D00a508a2900dc5D5B900176Af"
       abi: ConvictionVoting
       startBlock: 0
     mapping:
@@ -18,12 +18,12 @@ dataSources:
         - Vote
       abis:
         - name: ConvictionVoting
-          file: ../contracts/out/ConvictionVoting.sol/ConvictionVoting.json
+          file: ../contracts/artifacts/src/ConvictionVoting.sol/ConvictionVoting.json
       eventHandlers:
-        - event: ProposalCreated(indexed uint256,indexed address,string,uint256)
+        - event: ProposalCreated(indexed uint256,indexed address,string,uint256,address)
           handler: handleProposalCreated
-        - event: ConvictionUpdated(indexed uint256,indexed address,uint256)
-          handler: handleConvictionUpdated
+        - event: StakeChanged(indexed uint256,indexed address,uint256,uint256,uint256)
+          handler: handleStakeChanged
         - event: ProposalExecuted(indexed uint256,indexed address,uint256)
           handler: handleProposalExecuted
         - event: ProposalCancelled(indexed uint256)
@@ -34,7 +34,7 @@ dataSources:
     name: ImpactAttestation
     network: sepolia
     source:
-      address: "0x0000000000000000000000000000000000000000"
+      address: "0x4344e79d2f5d660cbBC8bdDC497B86eD3951d828"
       abi: ImpactAttestation
       startBlock: 0
     mapping:
@@ -46,12 +46,14 @@ dataSources:
         - Contributor
       abis:
         - name: ImpactAttestation
-          file: ../contracts/out/ImpactAttestation.sol/ImpactAttestation.json
+          file: ../contracts/artifacts/src/ImpactAttestation.sol/ImpactAttestation.json
       eventHandlers:
         - event: Submitted(indexed uint256,indexed address,string,uint256)
           handler: handleAttestationSubmitted
         - event: Confirmed(indexed uint256,indexed address,uint256)
           handler: handleConfirmed
+        - event: Rejected(indexed uint256,indexed address,uint256)
+          handler: handleRejected
         - event: Rewarded(indexed uint256,indexed address,uint256)
           handler: handleRewarded
       file: ./src/impact-attestation.ts
@@ -60,7 +62,7 @@ dataSources:
     name: SavingsCircle
     network: sepolia
     source:
-      address: "0x0000000000000000000000000000000000000000"
+      address: "0x172229A5599683ff52e685A751BF87998FA6c11a"
       abi: SavingsCircle
       startBlock: 0
     mapping:
@@ -71,7 +73,7 @@ dataSources:
         - Circle
       abis:
         - name: SavingsCircle
-          file: ../contracts/out/SavingsCircle.sol/SavingsCircle.json
+          file: ../contracts/artifacts/src/SavingsCircle.sol/SavingsCircle.json
       eventHandlers:
         - event: Created(indexed uint256,address,string)
           handler: handleCircleCreated
@@ -91,7 +93,7 @@ dataSources:
     name: DePINRegistry
     network: sepolia
     source:
-      address: "0x0000000000000000000000000000000000000000"
+      address: "0x4127C5192aAf3a33813eF2FC981711659a48A028"
       abi: DePINRegistry
       startBlock: 0
     mapping:
@@ -102,12 +104,12 @@ dataSources:
         - DataSubmission
       abis:
         - name: DePINRegistry
-          file: ../contracts/out/DePINRegistry.sol/DePINRegistry.json
+          file: ../contracts/artifacts/src/DePINRegistry.sol/DePINRegistry.json
       eventHandlers:
         - event: Submitted(indexed uint256,indexed address,uint8)
           handler: handleDataSubmitted
         - event: Verified(indexed uint256,uint256,uint256)
           handler: handleDataVerified
-        - event: Claimed(indexed uint256,address,uint256)
+        - event: Claimed(indexed uint256,indexed address,uint256)
           handler: handleDataClaimed
       file: ./src/depin-registry.ts

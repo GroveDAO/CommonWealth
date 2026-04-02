@@ -1,13 +1,15 @@
 type Proposal @entity {
   id: ID!
   proposer: Bytes!
-  metadataCID: String!
+  metadataURI: String!
   requestedAmount: BigInt!
   beneficiary: Bytes!
-  convictionLast: BigInt!
+  conviction: BigInt!
+  totalStaked: BigInt!
   executed: Boolean!
   cancelled: Boolean!
   createdAt: BigInt!
+  updatedAt: BigInt!
   votes: [Vote!]! @derivedFrom(field: "proposal")
 }
 
@@ -16,6 +18,7 @@ type Vote @entity {
   proposal: Proposal!
   voter: Bytes!
   amount: BigInt!
+  previousStake: BigInt!
   conviction: BigInt!
   blockNumber: BigInt!
   timestamp: BigInt!
@@ -24,12 +27,15 @@ type Vote @entity {
 type Attestation @entity {
   id: ID!
   contributor: Contributor!
-  proofCID: String!
-  descriptionCID: String!
+  proofURI: String!
+  descriptionURI: String!
   requestedReward: BigInt!
   confirmations: BigInt!
+  rejections: BigInt!
   rewarded: Boolean!
+  rejected: Boolean!
   submittedAt: BigInt!
+  updatedAt: BigInt!
 }
 
 type Contributor @entity {
@@ -49,20 +55,26 @@ type Circle @entity {
   token: Bytes!
   state: String!
   cycle: BigInt!
+  cycleStart: BigInt!
+  memberCount: BigInt!
   members: [Bytes!]!
+  payoutOrder: [Bytes!]!
+  currentRecipient: Bytes!
   totalContributed: BigInt!
   createdAt: BigInt!
+  updatedAt: BigInt!
 }
 
 type DataSubmission @entity {
   id: ID!
   contributor: Bytes!
-  dataCID: String!
-  litCID: String!
-  dtype: String!
+  metadataURI: String!
+  accessURI: String!
+  dataType: String!
   quality: BigInt!
   reward: BigInt!
   verified: Boolean!
   claimed: Boolean!
   submittedAt: BigInt!
+  updatedAt: BigInt!
 }

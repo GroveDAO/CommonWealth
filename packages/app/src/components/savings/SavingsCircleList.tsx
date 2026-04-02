@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { COMMONWEALTH_TOKEN_ABI, SAVINGS_CIRCLE_ABI } from "@commonwealth/sdk";
-import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
-import { CONTRACTS } from "@/lib/contracts";
+import { useAccount } from "wagmi";
+import { EmptySurface, SurfaceBanner } from "@/components/shared/SurfaceFeedback";
+import { useContractAction } from "@/hooks/useContractAction";
+import { CONTRACTS, contractsAreConfigured } from "@/lib/contracts";
 import { formatDuration, formatToken, truncateAddress } from "@/lib/format";
 import { useProtocolData, useRefreshProtocolData } from "@/hooks/useProtocolData";
 import { CreateCircleModal } from "./CreateCircleModal";
@@ -12,24 +14,19 @@ export function SavingsCircleList() {
   const { address, isConnected } = useAccount();
   const { data } = useProtocolData();
   const refreshProtocolData = useRefreshProtocolData();
-  const { data: hash, isPending, writeContract } = useWriteContract();
-  const { isSuccess } = useWaitForTransactionReceipt({ hash });
+  const circleAction = useContractAction(refreshProtocolData);
   const [showCreate, setShowCreate] = useState(false);
-
-  useEffect(() => {
-    if (isSuccess) {
-      void refreshProtocolData();
-    }
-  }, [isSuccess, refreshProtocolData]);
 
   const allowance = data?.wallet?.savingsAllowance ?? 0n;
 
   return (
     <section id="savings" className="space-y-6">
+      {circleAction.error ? <SurfaceBanner tone="error" title="Savings action failed" detail={circleAction.error} /> : null}
+
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-accent-purple mb-2">Savings circles</p>
-          <h2 className="font-serif text-3xl text-text-primary">Rotating contributions backed by live token escrow</h2>
+          <h2 className="font-serif text-3xl text-text-primary">Shared savings plans that keep every member on schedule</h2>
         </div>
         <button
           onClick={() => setShowCreate(true)}
@@ -40,6 +37,13 @@ export function SavingsCircleList() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        {data && data.circles.length === 0 ? (
+          <EmptySurface
+            title="No savings circles live yet"
+            detail="Create the first contribution group or check back when a new circle opens."
+          />
+        ) : null}
+
         {data?.circles.map((circle) => {
           const isCreator = address?.toLowerCase() === circle.creator.toLowerCase();
           const isFull = circle.memberCount >= circle.maxMembers;
@@ -100,14 +104,14 @@ export function SavingsCircleList() {
                 {isOpen && !isFull && (
                   <button
                     onClick={() =>
-                      writeContract({
+                      void circleAction.execute({
                         address: CONTRACTS.savingsCircle,
                         abi: SAVINGS_CIRCLE_ABI,
                         functionName: "join",
                         args: [circle.id],
                       })
                     }
-                    disabled={!isConnected || isPending}
+                    disabled={!contractsAreConfigured() || !isConnected || circleAction.isPending}
                     className="font-mono text-xs rounded-full px-4 py-2 border border-accent-purple/40 text-accent-purple bg-accent-purple/10 disabled:opacity-40"
                   >
                     Join circle
@@ -117,14 +121,14 @@ export function SavingsCircleList() {
                 {isOpen && isCreator && isFull && (
                   <button
                     onClick={() =>
-                      writeContract({
+                      void circleAction.execute({
                         address: CONTRACTS.savingsCircle,
                         abi: SAVINGS_CIRCLE_ABI,
                         functionName: "start",
                         args: [circle.id],
                       })
                     }
-                    disabled={isPending}
+                    disabled={!contractsAreConfigured() || circleAction.isPending}
                     className="font-mono text-xs rounded-full px-4 py-2 border border-accent-cyan/40 text-accent-cyan bg-accent-cyan/10 disabled:opacity-40"
                   >
                     Start rotation
@@ -134,14 +138,14 @@ export function SavingsCircleList() {
                 {isActive && (
                   <button
                     onClick={() =>
-                      writeContract({
+                      void circleAction.execute({
                         address: CONTRACTS.token,
                         abi: COMMONWEALTH_TOKEN_ABI,
-                        functionName: canContribute ? "approve" : "approve",
+                        functionName: "approve",
                         args: [CONTRACTS.savingsCircle, circle.contribution * 10n],
                       })
                     }
-                    disabled={!isConnected || isPending || canContribute}
+                    disabled={!contractsAreConfigured() || !isConnected || circleAction.isPending || canContribute}
                     className="font-mono text-xs rounded-full px-4 py-2 border border-border text-text-primary disabled:opacity-40"
                   >
                     Approve CWT
@@ -151,14 +155,14 @@ export function SavingsCircleList() {
                 {isActive && (
                   <button
                     onClick={() =>
-                      writeContract({
+                      void circleAction.execute({
                         address: CONTRACTS.savingsCircle,
                         abi: SAVINGS_CIRCLE_ABI,
                         functionName: "contribute",
                         args: [circle.id],
                       })
                     }
-                    disabled={!isConnected || isPending || !canContribute}
+                    disabled={!contractsAreConfigured() || !isConnected || circleAction.isPending || !canContribute}
                     className="font-mono text-xs rounded-full px-4 py-2 bg-accent-purple text-bg-page disabled:opacity-40"
                   >
                     Contribute cycle
